@@ -178,7 +178,7 @@ test("HTTP chief manages venue staff only with MFA and password reauthentication
 });
 
 
-test("HTTP annual participation honors organizer scope, closure, venue ownership and private history", async () => {
+test("HTTP annual participation honors organizer scope, closure, venue ownership private history and scoped staff roster", async () => {
   cookies.clear(); await db.rateLimit.deleteMany();
   const tag = randomUUID(), password = `Annual-synthetic-${tag}`;
   const university = await db.university.create({ data: { name: "Учебный вуз HTTP", abbreviation: "УЧ" } });
@@ -187,13 +187,14 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
   const chief = await db.user.create({ data: { name: "Учебный главный HTTP", email: `annual-chief-${tag}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER" } });
   const a = await db.user.create({ data: { name: "Учебный участник HTTP А", email: `annual-a-${tag}@example.test`, emailVerified: true } });
   const b = await db.user.create({ data: { name: "Чужой участник HTTP Б", email: `annual-b-${tag}@example.test`, emailVerified: true } });
-  const users = [chief.id, a.id, b.id];
+  const staff = await db.user.create({ data: { name: "Учебный организатор списка HTTP", email: `roster-staff-${tag}@example.test`, emailVerified: true, role: "VENUE_ORGANIZER" } });
+  const users = [chief.id, a.id, b.id, staff.id];
   const opening = new Date(Date.now() - 3600000), closing = new Date(Date.now() + 86400000);
   const edition = await db.olympiadEdition.create({ data: { year: 6500, title: "Учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
   const next = await db.olympiadEdition.create({ data: { year: 6501, title: "Следующий учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
   const editions = [edition.id, next.id];
   try {
-    for (const u of [chief, a, b]) await db.account.create({ data: { accountId: u.id, providerId: "credential", userId: u.id, password: await hashPassword(password) } });
+    for (const u of [chief, a, b, staff]) await db.account.create({ data: { accountId: u.id, providerId: "credential", userId: u.id, password: await hashPassword(password) } });
     for (const u of [a, b]) {
       await db.studentProfile.create({ data: { userId: u.id, fullName: u.name, universityId: university.id, courseId: course.id } });
       await db.consentRecord.create({ data: { userId: u.id, purpose: "synthetic-demo-only", textVersion: "demo-only-v1", textHash: "a".repeat(64) } });
@@ -253,6 +254,36 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
     const preserved = await (await request("/api/participations")).json() as typeof view;
     assert.equal(preserved.participations.find((p) => p.editionId === edition.id)?.venue?.active, false);
+    const rosterQuery = { editionId: edition.id };
+    assert.equal((await request("/api/registrations/search", rosterQuery)).status, 403, "Students cannot read organizer rosters");
+    assert.equal((await request("/api/registrations/search", rosterQuery, false)).status, 401);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
+    const chiefRoster = await request("/api/registrations/search", rosterQuery);
+    assert.equal(chiefRoster.status, 200);
+    assert.ok(chiefRoster.headers.get("cache-control")?.includes("no-store"));
+    assert.equal((await chiefRoster.json() as { total: number }).total, 1);
+    assert.equal((await request("/api/registrations/search", { editionId: next.id })).status, 403);
+    await db.venueStaffAssignment.create({ data: { userId: staff.id, editionId: edition.id, editionVenueId: site.id } });
+    cookies.clear();
+    assert.equal((await request("/api/auth/sign-in/email", { email: staff.email, password })).status, 200);
+    assert.equal((await request("/api/registrations/search", rosterQuery)).status, 403, "MFA is required before reading participant data");
+    const staffEnrollment = await (await request("/api/auth/two-factor/enable", { password, method: "totp" })).json() as { totpURI: string };
+    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(staffEnrollment.totpURI), trustDevice: false })).status, 200);
+    const roster = await request("/api/registrations/search", rosterQuery);
+    assert.equal(roster.status, 200);
+    const list = await roster.json() as { total: number; rows: { fullName: string; email: string }[] };
+    assert.equal(list.total, 1); assert.equal(list.rows[0].email, a.email);
+    assert.ok(!JSON.stringify(list).includes(b.email));
+    assert.equal((await request("/api/registrations/search", { ...rosterQuery, editionVenueId: nextSite.id })).status, 403);
+    assert.equal((await request("/api/registrations/search", { ...rosterQuery, actorId: chief.id })).status, 400);
+    assert.equal((await request("/api/registrations/search", { ...rosterQuery, sort: "consentId" })).status, 400);
+    const page = await request("/cabinet/registrations"); assert.equal(page.status, 200);
+    const html = await page.text(); assert.ok(html.includes(a.name)); assert.ok(!html.includes(b.email));
+    await db.venueStaffAssignment.updateMany({ where: { userId: staff.id }, data: { revokedAt: new Date() } });
+    assert.equal((await request("/api/registrations/search", rosterQuery)).status, 403, "An old valid session does not bypass assignment revocation");
+    const visible = await (await request("/api/registrations/options")).json() as { editions: unknown[] };
+    assert.equal(visible.editions.length, 0);
+
   } finally {
     await db.$transaction(async (tx) => {
       const sites = await tx.editionVenue.findMany({ where: { editionId: { in: editions } }, select: { venueId: true } });
@@ -265,6 +296,7 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
       await tx.olympiadEdition.deleteMany({ where: { id: { in: editions } } });
       await tx.studentProfile.deleteMany({ where: { userId: { in: users } } });
       await tx.consentRecord.deleteMany({ where: { userId: { in: users } } });
+      await tx.verification.deleteMany({ where: { value: { in: users } } });
       await tx.user.deleteMany({ where: { id: { in: users } } });
       await tx.courseOption.deleteMany({ where: { id: { in: [course.id, nextCourse.id] } } });
       await tx.university.delete({ where: { id: university.id } });
