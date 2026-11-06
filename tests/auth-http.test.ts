@@ -11,9 +11,9 @@ const origin = new URL(base).origin;
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 after(() => db.$disconnect());
 const cookies = new Map<string, string>();
-async function request(path: string, body?: unknown, cookie = true, requestOrigin = origin) {
+async function request(path: string, body?: unknown, cookie = true, requestOrigin = origin, method = body === undefined ? "GET" : "POST") {
   const response = await fetch(`${base}${path}`, {
-    method: body === undefined ? "GET" : "POST", redirect: "manual",
+    method, redirect: "manual",
     headers: { origin: requestOrigin, ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(cookie ? { Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -174,5 +174,100 @@ test("HTTP chief manages venue staff only with MFA and password reauthentication
     await db.olympiadEdition.delete({ where: { id: edition.id } });
     await db.verification.deleteMany({ where: { value: { in: ids } } });
     await db.user.deleteMany({ where: { id: { in: ids } } });
+  }
+});
+
+
+test("HTTP annual participation honors organizer scope, closure, venue ownership and private history", async () => {
+  cookies.clear(); await db.rateLimit.deleteMany();
+  const tag = randomUUID(), password = `Annual-synthetic-${tag}`;
+  const university = await db.university.create({ data: { name: "Учебный вуз HTTP", abbreviation: "УЧ" } });
+  const course = await db.courseOption.create({ data: { label: "Учебный курс HTTP" } });
+  const nextCourse = await db.courseOption.create({ data: { label: "Следующий учебный курс HTTP" } });
+  const chief = await db.user.create({ data: { name: "Учебный главный HTTP", email: `annual-chief-${tag}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER" } });
+  const a = await db.user.create({ data: { name: "Учебный участник HTTP А", email: `annual-a-${tag}@example.test`, emailVerified: true } });
+  const b = await db.user.create({ data: { name: "Чужой участник HTTP Б", email: `annual-b-${tag}@example.test`, emailVerified: true } });
+  const users = [chief.id, a.id, b.id];
+  const opening = new Date(Date.now() - 3600000), closing = new Date(Date.now() + 86400000);
+  const edition = await db.olympiadEdition.create({ data: { year: 6500, title: "Учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
+  const next = await db.olympiadEdition.create({ data: { year: 6501, title: "Следующий учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
+  const editions = [edition.id, next.id];
+  try {
+    for (const u of [chief, a, b]) await db.account.create({ data: { accountId: u.id, providerId: "credential", userId: u.id, password: await hashPassword(password) } });
+    for (const u of [a, b]) {
+      await db.studentProfile.create({ data: { userId: u.id, fullName: u.name, universityId: university.id, courseId: course.id } });
+      await db.consentRecord.create({ data: { userId: u.id, purpose: "synthetic-demo-only", textVersion: "demo-only-v1", textHash: "a".repeat(64) } });
+    }
+    await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
+    assert.equal((await request("/api/auth/sign-in/email", { email: chief.email, password })).status, 200);
+    const enrollment = await request("/api/auth/two-factor/enable", { password, method: "totp" });
+    const factor = await enrollment.json() as { totpURI: string };
+    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
+    const chiefCookies = new Map(cookies);
+    const settings = { editionId: edition.id, revision: 0, title: edition.title, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, isCurrent: true };
+    assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 200);
+    assert.equal((await request("/api/editions", { ...settings, editionId: next.id }, true, origin, "PATCH")).status, 403);
+    const available = await (await request("/api/editions")).json() as { id: string }[];
+    assert.deepEqual(available.map((e) => e.id), [edition.id]);
+    const created = await request("/api/venues", { editionId: edition.id, label: "Учебная площадка HTTP", address: "Учебный адрес HTTP", room: "Тест", instructions: "Учебные правила" });
+    assert.equal(created.status, 200);
+    const site = await created.json() as { id: string; venueId: string };
+    const nextSite = await db.editionVenue.create({ data: { editionId: next.id, venueId: site.venueId, label: "Площадка другого года HTTP", address: "Адрес другого года" } });
+    cookies.clear();
+    assert.equal((await request("/api/auth/sign-in/email", { email: a.email, password })).status, 200);
+    const studentCookies = new Map(cookies);
+    const input = { editionId: edition.id, format: "ONSITE", editionVenueId: site.id, fullName: a.name, universityId: university.id, courseId: course.id };
+    const closed = await request("/api/participations", input);
+    assert.equal(closed.status, 409);
+    assert.equal((await closed.json() as { code: string }).code, "REGISTRATION_CLOSED");
+    assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
+    assert.equal((await request("/api/editions", { ...settings, revision: 1, registrationManuallyClosed: false }, true, origin, "PATCH")).status, 200);
+    cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
+    assert.equal((await request("/api/participations", { ...input, userId: b.id })).status, 400);
+    const first = await request("/api/participations", input);
+    assert.equal(first.status, 200);
+    const firstData = await first.json() as { id: string };
+    assert.equal((await (await request("/api/participations", input)).json() as { id: string }).id, firstData.id);
+    assert.equal((await request("/api/participations", { ...input, editionId: next.id })).status, 409, "Cannot submit a venue from another edition");
+    assert.equal((await request("/api/participations", { editionId: next.id, format: "REMOTE", remoteZone: "NSK", fullName: "Обновлённый учебный участник HTTP", universityId: university.id, courseId: nextCourse.id })).status, 200);
+    const consentB = await db.consentRecord.findFirstOrThrow({ where: { userId: b.id } });
+    await db.participation.create({ data: { userId: b.id, editionId: next.id, format: "REMOTE", remoteZone: "MSK", fullName: b.name, universityId: university.id, universityName: university.name, universityAbbreviation: university.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consentB.id } });
+    const history = await request(`/api/participations?userId=${b.id}`);
+    assert.ok(history.headers.get("cache-control")?.includes("no-store"));
+    const view = await history.json() as { participations: { editionId: string; fullName: string; courseLabel: string; venue: { active: boolean } | null }[] };
+    assert.equal(view.participations.length, 2);
+    assert.equal(view.participations.find((p) => p.editionId === edition.id)?.fullName, a.name);
+    assert.equal(view.participations.find((p) => p.editionId === edition.id)?.courseLabel, course.label);
+    assert.ok(!JSON.stringify(view).includes(b.name));
+    assert.equal((await request("/cabinet/olympiad")).status, 200);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
+    assert.equal((await request("/api/venues", { editionId: edition.id, editionVenueId: site.id, revision: 0, label: "Учебная площадка HTTP", address: "Обновлённый адрес", room: "Тест", instructions: "Учебные правила", active: false }, true, origin, "PATCH")).status, 200);
+    assert.equal((await db.editionVenue.findUniqueOrThrow({ where: { id: nextSite.id } })).address, "Адрес другого года");
+    assert.equal((await request("/cabinet/organization")).status, 200);
+    cookies.clear();
+    assert.equal((await request("/api/auth/sign-in/email", { email: b.email, password })).status, 200);
+    const disabled = await request("/api/participations", { ...input, fullName: b.name });
+    assert.equal(disabled.status, 409);
+    assert.equal((await disabled.json() as { code: string }).code, "INVALID_VENUE");
+    cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
+    const preserved = await (await request("/api/participations")).json() as typeof view;
+    assert.equal(preserved.participations.find((p) => p.editionId === edition.id)?.venue?.active, false);
+  } finally {
+    await db.$transaction(async (tx) => {
+      const sites = await tx.editionVenue.findMany({ where: { editionId: { in: editions } }, select: { venueId: true } });
+      await tx.participation.deleteMany({ where: { editionId: { in: editions } } });
+      await tx.auditEvent.deleteMany({ where: { OR: [{ actorId: { in: users } }, { editionId: { in: editions } }] } });
+      await tx.venueStaffAssignment.deleteMany({ where: { editionId: { in: editions } } });
+      await tx.editionVenue.deleteMany({ where: { editionId: { in: editions } } });
+      await tx.venue.deleteMany({ where: { id: { in: sites.map((v) => v.venueId) } } });
+      await tx.editionStaffGrant.deleteMany({ where: { editionId: { in: editions } } });
+      await tx.olympiadEdition.deleteMany({ where: { id: { in: editions } } });
+      await tx.studentProfile.deleteMany({ where: { userId: { in: users } } });
+      await tx.consentRecord.deleteMany({ where: { userId: { in: users } } });
+      await tx.user.deleteMany({ where: { id: { in: users } } });
+      await tx.courseOption.deleteMany({ where: { id: { in: [course.id, nextCourse.id] } } });
+      await tx.university.delete({ where: { id: university.id } });
+    });
   }
 });

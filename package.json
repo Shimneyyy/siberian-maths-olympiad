@@ -15,10 +15,11 @@
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "test:db": "tsx --test tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts",
+    "test:db": "tsx --test tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts tests/olympiad.test.ts",
     "test:http": "node scripts/test-http.mjs",
     "staff:bootstrap": "tsx scripts/bootstrap-chief.ts",
-    "dev:setup": "node scripts/init-env.mjs"
+    "dev:setup": "node scripts/init-env.mjs",
+    "edition:create": "tsx scripts/create-edition.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

@@ -29,21 +29,24 @@ model User {
   updatedAt        DateTime               @updatedAt @db.Timestamptz(3)
   profile          StudentProfile?
   consents         ConsentRecord[]
+  participations   Participation[]
 }
 
 model University {
-  id           String           @id @default(uuid()) @db.Uuid
-  name         String
-  abbreviation String
-  active       Boolean          @default(true)
-  profiles     StudentProfile[]
+  id             String           @id @default(uuid()) @db.Uuid
+  name           String
+  abbreviation   String
+  active         Boolean          @default(true)
+  profiles       StudentProfile[]
+  participations Participation[]
 }
 
 model CourseOption {
-  id       String           @id @default(uuid()) @db.Uuid
-  label    String
-  active   Boolean          @default(true)
-  profiles StudentProfile[]
+  id             String           @id @default(uuid()) @db.Uuid
+  label          String
+  active         Boolean          @default(true)
+  profiles       StudentProfile[]
+  participations Participation[]
 }
 
 model StudentProfile {
@@ -66,18 +69,27 @@ model ConsentRecord {
   withdrawnAt DateTime? @db.Timestamptz(3)
   user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
+  participations Participation[]
+
+  @@unique([id, userId])
   @@index([userId, purpose])
 }
 
 model OlympiadEdition {
-  id               String                 @id @default(uuid()) @db.Uuid
-  year             Int                    @unique
-  title            String
-  timezone         String                 @default("Asia/Novosibirsk")
-  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
-  staffGrants      EditionStaffGrant[]
-  venues           EditionVenue[]
-  venueAssignments VenueStaffAssignment[]
+  id                         String                 @id @default(uuid()) @db.Uuid
+  year                       Int                    @unique
+  title                      String
+  timezone                   String                 @default("Asia/Novosibirsk")
+  createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
+  registrationOpensAt        DateTime?              @db.Timestamptz(3)
+  registrationClosesAt       DateTime?              @db.Timestamptz(3)
+  registrationManuallyClosed Boolean                @default(false)
+  isCurrent                  Boolean                @default(false)
+  revision                   Int                    @default(0)
+  participations             Participation[]
+  staffGrants                EditionStaffGrant[]
+  venues                     EditionVenue[]
+  venueAssignments           VenueStaffAssignment[]
 }
 
 model Session {
@@ -163,16 +175,19 @@ model Venue {
 }
 
 model EditionVenue {
-  id           String                 @id @default(uuid()) @db.Uuid
-  editionId    String                 @db.Uuid
-  venueId      String                 @db.Uuid
-  address      String
-  room         String?
-  instructions String?
-  active       Boolean                @default(true)
-  edition      OlympiadEdition        @relation(fields: [editionId], references: [id], onDelete: Restrict)
-  venue        Venue                  @relation(fields: [venueId], references: [id], onDelete: Restrict)
-  assignments  VenueStaffAssignment[]
+  id             String                 @id @default(uuid()) @db.Uuid
+  editionId      String                 @db.Uuid
+  venueId        String                 @db.Uuid
+  label          String?
+  revision       Int                    @default(0)
+  address        String
+  room           String?
+  instructions   String?
+  active         Boolean                @default(true)
+  edition        OlympiadEdition        @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  venue          Venue                  @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  assignments    VenueStaffAssignment[]
+  participations Participation[]
 
   @@unique([editionId, venueId])
   @@unique([id, editionId])
@@ -199,7 +214,50 @@ model AuditEvent {
   objectId   String   @db.Uuid
   editionId  String?  @db.Uuid
   outcome    String
+  details    Json?
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([editionId, createdAt])
+}
+
+enum ParticipationFormat {
+  ONSITE
+  REMOTE
+}
+
+enum RemoteZone {
+  MSK
+  NSK
+}
+
+enum ParticipationStatus {
+  REGISTERED
+  CANCELLED
+}
+
+model Participation {
+  id                     String              @id @default(uuid()) @db.Uuid
+  userId                 String              @db.Uuid
+  editionId              String              @db.Uuid
+  format                 ParticipationFormat
+  editionVenueId         String?             @db.Uuid
+  remoteZone             RemoteZone?
+  status                 ParticipationStatus @default(REGISTERED)
+  fullName               String
+  universityId           String              @db.Uuid
+  universityName         String
+  universityAbbreviation String
+  courseId               String              @db.Uuid
+  courseLabel            String
+  consentId              String              @db.Uuid
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  edition                OlympiadEdition     @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  editionVenue           EditionVenue?       @relation(fields: [editionVenueId, editionId], references: [id, editionId], onDelete: Restrict)
+  university             University          @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  course                 CourseOption        @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  consent                ConsentRecord       @relation(fields: [consentId, userId], references: [id, userId], onDelete: Restrict)
+
+  @@unique([userId, editionId])
+  @@index([editionId, editionVenueId, id])
 }
