@@ -21,7 +21,16 @@ jobs:
           --health-interval 3s
           --health-timeout 3s
           --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.27.8
+        ports:
+          - 1025:1025
+          - 8025:8025
     env:
+      BETTER_AUTH_SECRET: ci-only-synthetic-secret-not-a-production-credential-0001
+      BETTER_AUTH_URL: http://localhost:3100
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: '1025'
       DATABASE_URL: postgresql://smo:ci_only_password@127.0.0.1:5432/smo_test?schema=public
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
@@ -38,4 +47,5 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:db
+      - run: npm run test:http
       - run: npm run build

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 const roles = [
@@ -21,9 +22,9 @@ export default function Home() {
           <p className="text-sm text-slate-600">Сервис проверки работ</p>
         </div>
         <aside className="mt-12 rounded-xl border border-border bg-white p-5" aria-label="Состояние сервиса">
-          <p className="font-medium">Личный кабинет готовится к запуску</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Регистрация и вход пока недоступны. Сбор персональных данных не ведётся.</p>
-        </aside>
+          <p className="font-medium">Личный кабинет в учебном режиме</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Доступны вход и настройка безопасности. Учебная регистрация принимает только вымышленные данные; сбор реальных ПДн не открыт.</p>
+        <nav aria-label="Личный кабинет" className="mt-4 flex gap-4 text-sm text-primary"><Link href="/login">Войти</Link><Link href="/register">Учебная регистрация</Link></nav></aside>
         <section aria-label="Возможности будущего кабинета" className="mt-8 grid gap-5 md:grid-cols-3">
           {roles.map(([title, description]) => <article key={title} className="rounded-xl border border-border bg-white p-6"><h2 className="text-lg font-semibold">{title}</h2><p className="mt-3 leading-7 text-slate-600">{description}</p></article>)}
         </section>

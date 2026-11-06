@@ -1,6 +1,7 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
 }
@@ -12,57 +13,193 @@ enum Role {
 }
 
 model User {
-  id              String @id @default(uuid()) @db.Uuid
-  email           String @unique @db.VarChar(254)
-  emailVerifiedAt DateTime? @db.Timestamptz(3)
-  role            Role @default(STUDENT)
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
-  profile         StudentProfile?
-  consents        ConsentRecord[]
+  id               String                 @id @default(uuid()) @db.Uuid
+  email            String                 @unique @db.VarChar(254)
+  name             String
+  emailVerified    Boolean                @default(false)
+  image            String?
+  twoFactorEnabled Boolean                @default(false)
+  sessions         Session[]
+  accounts         Account[]
+  twoFactors       TwoFactor[]
+  editionGrants    EditionStaffGrant[]
+  venueAssignments VenueStaffAssignment[]
+  role             Role                   @default(STUDENT)
+  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime               @updatedAt @db.Timestamptz(3)
+  profile          StudentProfile?
+  consents         ConsentRecord[]
 }
 
 model University {
-  id           String @id @default(uuid()) @db.Uuid
+  id           String           @id @default(uuid()) @db.Uuid
   name         String
   abbreviation String
-  active       Boolean @default(true)
+  active       Boolean          @default(true)
   profiles     StudentProfile[]
 }
 
 model CourseOption {
-  id       String @id @default(uuid()) @db.Uuid
+  id       String           @id @default(uuid()) @db.Uuid
   label    String
-  active   Boolean @default(true)
+  active   Boolean          @default(true)
   profiles StudentProfile[]
 }
 
 model StudentProfile {
-  userId       String @id @db.Uuid
+  userId       String       @id @db.Uuid
   fullName     String
-  universityId String @db.Uuid
-  courseId     String @db.Uuid
-  user         User @relation(fields: [userId], references: [id], onDelete: Restrict)
-  university   University @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  universityId String       @db.Uuid
+  courseId     String       @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  university   University   @relation(fields: [universityId], references: [id], onDelete: Restrict)
   course       CourseOption @relation(fields: [courseId], references: [id], onDelete: Restrict)
 }
 
 model ConsentRecord {
-  id          String @id @default(uuid()) @db.Uuid
-  userId      String @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
   purpose     String
   textVersion String
-  textHash    String @db.Char(64)
-  acceptedAt  DateTime @default(now()) @db.Timestamptz(3)
+  textHash    String    @db.Char(64)
+  acceptedAt  DateTime  @default(now()) @db.Timestamptz(3)
   withdrawnAt DateTime? @db.Timestamptz(3)
-  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
   @@index([userId, purpose])
 }
 
 model OlympiadEdition {
-  id        String @id @default(uuid()) @db.Uuid
-  year      Int @unique
-  title     String
-  timezone  String @default("Asia/Novosibirsk")
+  id               String                 @id @default(uuid()) @db.Uuid
+  year             Int                    @unique
+  title            String
+  timezone         String                 @default("Asia/Novosibirsk")
+  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
+  staffGrants      EditionStaffGrant[]
+  venues           EditionVenue[]
+  venueAssignments VenueStaffAssignment[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  expiresAt DateTime @db.Timestamptz(3)
+  token     String   @unique
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  ipAddress String?
+  userAgent String?
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([identifier])
+}
+
+model TwoFactor {
+  id                      String    @id @default(uuid()) @db.Uuid
+  secret                  String
+  backupCodes             String
+  userId                  String    @db.Uuid
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime? @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([secret])
+}
+
+model RateLimit {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model EditionStaffGrant {
+  userId    String          @db.Uuid
+  editionId String          @db.Uuid
+  revokedAt DateTime?       @db.Timestamptz(3)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  edition   OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+
+  @@id([userId, editionId])
+}
+
+model Venue {
+  id       String         @id @default(uuid()) @db.Uuid
+  name     String
+  editions EditionVenue[]
+}
+
+model EditionVenue {
+  id           String                 @id @default(uuid()) @db.Uuid
+  editionId    String                 @db.Uuid
+  venueId      String                 @db.Uuid
+  address      String
+  room         String?
+  instructions String?
+  active       Boolean                @default(true)
+  edition      OlympiadEdition        @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  venue        Venue                  @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  assignments  VenueStaffAssignment[]
+
+  @@unique([editionId, venueId])
+  @@unique([id, editionId])
+}
+
+model VenueStaffAssignment {
+  userId         String          @db.Uuid
+  editionId      String          @db.Uuid
+  editionVenueId String          @db.Uuid
+  revokedAt      DateTime?       @db.Timestamptz(3)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  edition        OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  editionVenue   EditionVenue    @relation(fields: [editionVenueId, editionId], references: [id, editionId], onDelete: Restrict)
+
+  @@id([userId, editionVenueId])
+  @@index([userId, editionId])
+}
+
+model AuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  objectType String
+  objectId   String   @db.Uuid
+  editionId  String?  @db.Uuid
+  outcome    String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([editionId, createdAt])
 }

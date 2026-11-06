@@ -14,9 +14,9 @@ test("database is reachable", async () => {
 test("database rejects duplicate emails and unknown roles", async () => {
   const email = `test-${randomUUID()}@example.invalid`;
   try {
-    const user = await db.user.create({ data: { email } });
+    const user = await db.user.create({ data: { email, name: "Синтетический участник" } });
     assert.equal(user.role, "STUDENT");
-    await assert.rejects(db.user.create({ data: { email } }),
+    await assert.rejects(db.user.create({ data: { email, name: "Синтетический участник" } }),
       (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002");
     await assert.rejects(db.$executeRaw`UPDATE "User" SET "role" = 'ADMIN' WHERE "id" = ${user.id}::uuid`);
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: user.id } })).role, "STUDENT");
@@ -24,7 +24,7 @@ test("database rejects duplicate emails and unknown roles", async () => {
 });
 
 test("profile requires existing university and course", async () => {
-  const user = await db.user.create({ data: { email: `fk-${randomUUID()}@example.invalid` } });
+  const user = await db.user.create({ data: { name: "Синтетический участник", email: `fk-${randomUUID()}@example.invalid` } });
   try {
     await assert.rejects(db.studentProfile.create({ data: {
       userId: user.id, fullName: "Синтетический участник", universityId: randomUUID(), courseId: randomUUID(),
