@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  CHIEF_ORGANIZER
+  VENUE_ORGANIZER
+}
+
+model User {
+  id              String @id @default(uuid()) @db.Uuid
+  email           String @unique @db.VarChar(254)
+  emailVerifiedAt DateTime? @db.Timestamptz(3)
+  role            Role @default(STUDENT)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  profile         StudentProfile?
+  consents        ConsentRecord[]
+}
+
+model University {
+  id           String @id @default(uuid()) @db.Uuid
+  name         String
+  abbreviation String
+  active       Boolean @default(true)
+  profiles     StudentProfile[]
+}
+
+model CourseOption {
+  id       String @id @default(uuid()) @db.Uuid
+  label    String
+  active   Boolean @default(true)
+  profiles StudentProfile[]
+}
+
+model StudentProfile {
+  userId       String @id @db.Uuid
+  fullName     String
+  universityId String @db.Uuid
+  courseId     String @db.Uuid
+  user         User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  university   University @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  course       CourseOption @relation(fields: [courseId], references: [id], onDelete: Restrict)
+}
+
+model ConsentRecord {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  purpose     String
+  textVersion String
+  textHash    String @db.Char(64)
+  acceptedAt  DateTime @default(now()) @db.Timestamptz(3)
+  withdrawnAt DateTime? @db.Timestamptz(3)
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, purpose])
+}
+
+model OlympiadEdition {
+  id        String @id @default(uuid()) @db.Uuid
+  year      Int @unique
+  title     String
+  timezone  String @default("Asia/Novosibirsk")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
