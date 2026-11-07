@@ -17,6 +17,7 @@ export async function olympiadRequest(request: Request, operation: (actorId: str
   try {
     if (request.method !== "GET") body = (await readJsonBody(request)).value;
     const result = await operation(session.user.id, body);
+    if (result instanceof Response) return result;
     return Response.json(result, { headers });
   } catch (error) {
     if (error instanceof AdminRateLimit) return Response.json({ error: "Слишком много попыток" }, { status: 429, headers });

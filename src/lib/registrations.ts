@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import { csvRow } from "./csv";
+import { OlympiadError } from "./olympiad-rules";
 import { AccessDenied, authorizeStaff } from "./access";
 
 export const registrationsQuerySchema = z.object({
@@ -61,10 +63,7 @@ function orderBy(input: RegistrationsQuery): Prisma.ParticipationOrderByWithRela
 }
 // Prisma contains uses LIKE; escape wildcard characters so the search is literal.
 function literalLike(value: string) { return value.replace(/[\\%_]/g, "\\$&"); }
-export async function listRegistrations(db: PrismaClient, actorId: string, raw: unknown) {
-  const input = registrationsQuerySchema.parse(raw);
-  return db.$transaction(async (tx) => {
-    const scope = await registrationsScope(tx, actorId, input.editionId, input.editionVenueId);
+function registrationWhere(input: RegistrationsQuery, scope: Prisma.ParticipationWhereInput): Prisma.ParticipationWhereInput {
     const predicates: Prisma.ParticipationWhereInput[] = [scope];
     if (input.search) predicates.push({ OR: [
       { fullName: { contains: literalLike(input.search), mode: "insensitive" } },
@@ -74,7 +73,13 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
     if (input.courseLabel !== undefined) predicates.push({ courseLabel: input.courseLabel });
     if (input.status) predicates.push({ status: input.status });
     if (input.format) predicates.push({ format: input.format });
-    const where = { AND: predicates };
+    return { AND: predicates };
+}
+export async function listRegistrations(db: PrismaClient, actorId: string, raw: unknown) {
+  const input = registrationsQuerySchema.parse(raw);
+  return db.$transaction(async (tx) => {
+    const scope = await registrationsScope(tx, actorId, input.editionId, input.editionVenueId);
+    const where = registrationWhere(input, scope);
     const total = await tx.participation.count({ where });
     const pages = Math.max(1, Math.ceil(total / input.pageSize));
     const page = Math.min(input.page, pages);
@@ -96,4 +101,27 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
       })),
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+}
+
+// The same server scope and predicates as the roster, ignoring page/pageSize intentionally.
+// No temporary export file, client-provided rows, auth fields or external secrets.
+export async function exportRegistrations(db: PrismaClient, actorId: string, raw: unknown) {
+  const input = registrationsQuerySchema.parse(raw);
+  return db.$transaction(async tx => {
+    const scope = await registrationsScope(tx, actorId, input.editionId, input.editionVenueId);
+    const where = registrationWhere(input, scope);
+    const total = await tx.participation.count({ where });
+    // Bound the synchronous response; fail explicitly rather than return a truncated export.
+    if (total > 10000) throw new OlympiadError("CONFLICT", "Слишком большая выгрузка. Уточните фильтры (не более 10000 строк).");
+    const rows = await tx.participation.findMany({ where, orderBy: orderBy(input),
+      select: { fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
+        user: { select: { email: true } }, editionVenue: { select: { label: true, venue: { select: { name: true } } } } },
+    });
+    const csv = "\uFEFF" + csvRow(["ФИО", "Email", "Вуз", "Курс", "Статус", "Формат", "Площадка / часовой пояс", "Дата регистрации (UTC)"]) +
+      rows.map(p => csvRow([p.fullName, p.user.email, p.universityName, p.courseLabel,
+        p.status === "REGISTERED" ? "Зарегистрирован" : "Участие отменено", p.format === "ONSITE" ? "Очно" : "Дистанционно",
+        p.editionVenue ? (p.editionVenue.label || p.editionVenue.venue.name) : p.remoteZone === "MSK" ? "МСК UTC+3" : "НСК UTC+7", p.createdAt.toISOString()])).join("");
+    await tx.auditEvent.create({ data: { actorId, action: "REGISTRATIONS_EXPORTED", objectType: "OlympiadEdition", objectId: input.editionId, editionId: input.editionId, outcome: "SUCCESS", details: { rowCount: rows.length, ...(input.editionVenueId ? { editionVenueId: input.editionVenueId } : {}) } } });
+    return csv;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
 }

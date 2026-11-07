@@ -116,3 +116,42 @@ test("pagination has a unique tie-breaker, bounded pages, and an allowlisted DTO
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, sort: "consentId" }));
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, actorId: f.chief.id }));
 });
+
+test("CSV export applies server scope and filters across all pages and audits no personal data", async () => {
+  const { exportRegistrations } = await import("../src/lib/registrations");
+  const query = { editionId: f.editions[0].id, pageSize: 10, page: 2 };
+  const csv = await exportRegistrations(db, f.staff.id, query);
+  assert.ok(csv.startsWith("\uFEFF"));
+  assert.equal(csv.trimEnd().split("\r\n").length, 18, "Header plus all 17 scoped rows, not just a page");
+  for (const secret of ["Чужой участник", "Закрытый вуз", "Дистанционный", "Исторический", "consentId", "userId", "password"]) assert.ok(!csv.includes(secret));
+  const filtered = await exportRegistrations(db, f.staff.id, { ...query, universityName: "Свой вуз", status: "CANCELLED" });
+  assert.equal(filtered.trimEnd().split("\r\n").length, 2);
+  assert.ok(filtered.includes("Участие отменено"));
+  assert.equal((await exportRegistrations(db, f.chief.id, { editionId: f.editions[0].id, format: "REMOTE" })).trimEnd().split("\r\n").length, 3);
+  for (const actor of [f.student, f.noMfa]) await assert.rejects(exportRegistrations(db, actor.id, query), AccessDenied);
+  await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, editionVenueId: f.sites[2].id }), AccessDenied);
+  await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, editionId: f.editions[2].id }), AccessDenied);
+  await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, rows: [] }));
+  await db.venueStaffAssignment.updateMany({ where: { userId: f.staff.id }, data: { revokedAt: new Date() } });
+  try { await assert.rejects(exportRegistrations(db, f.staff.id, query), AccessDenied); }
+  finally { await db.venueStaffAssignment.updateMany({ where: { userId: f.staff.id }, data: { revokedAt: null } }); }
+  const audits = await db.auditEvent.findMany({ where: { actorId: f.staff.id, action: "REGISTRATIONS_EXPORTED" } });
+  assert.ok(audits.some(x => (x.details as { rowCount: number }).rowCount === 17));
+  assert.ok(!JSON.stringify(audits).includes("Свой вуз"));
+  assert.ok(!JSON.stringify(audits).includes("@example.test"));
+});
+
+test("CSV neutralizes formulas, leading controls, whitespace and quoted multiline cells", async () => {
+  const { csvCell, csvRow } = await import("../src/lib/csv");
+  const { exportRegistrations } = await import("../src/lib/registrations");
+  for (const value of ["=1+1", "+SUM(A1)", "-1+2", "@SUM(A1)", "\t=1+1", " \r\n=1+1", "\uFEFF=1+1", "\u0000text", "\ntext"]) assert.equal(csvCell(value), `"'${value}"`);
+  assert.equal(csvRow(['Учебный, "вуз"\r\nстрока', "Обычный текст"]), '"Учебный, ""вуз""\r\nстрока","Обычный текст"\r\n');
+  const old = await db.participation.findUniqueOrThrow({ where: { id: f.aIds[0] } });
+  try {
+    await db.participation.update({ where: { id: old.id }, data: { fullName: '=HYPERLINK("https://example.test")', universityName: '\t=1+1', courseLabel: 'Курс, "Тест"\nстрока' } });
+    const csv = await exportRegistrations(db, f.staff.id, { editionId: f.editions[0].id, search: "HYPERLINK" });
+    assert.ok(csv.includes('"\'=HYPERLINK(""https://example.test"")"'));
+    assert.ok(csv.includes('"\'\t=1+1"'));
+    assert.ok(csv.includes('"Курс, ""Тест""\nстрока"'));
+  } finally { await db.participation.update({ where: { id: old.id }, data: { fullName: old.fullName, universityName: old.universityName, courseLabel: old.courseLabel } }); }
+});

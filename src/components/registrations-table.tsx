@@ -34,6 +34,21 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
     } catch { if (requestId.current === current) setMessage("Не удалось получить список. Повторите запрос."); }
     finally { if (requestId.current === current) setBusy(false); }
   }
+  async function download() {
+    const current = ++requestId.current;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/registrations/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(filters), cache: "no-store" });
+      if (current !== requestId.current) return;
+      if (!response.ok) { const result = await response.json(); setMessage(result.error || "Выгрузка недоступна"); if ([401,403].includes(response.status)) { setData(null); setFacets({ universityNames: [], courseLabels: [] }); } return; }
+      const blob = await response.blob();
+      if (current !== requestId.current) return;
+      const url = URL.createObjectURL(blob), link = document.createElement("a");
+      try { link.href = url; link.download = "registrations.csv"; document.body.appendChild(link); link.click(); }
+      finally { link.remove(); URL.revokeObjectURL(url); }
+    } catch { if (current === requestId.current) setMessage("Не удалось скачать выгрузку"); }
+    finally { if (current === requestId.current) setBusy(false); }
+  }
   if (!options.editions.length) return <p>У вас нет действующих назначений на годы или площадки олимпиады.</p>;
   return <div className="space-y-6">
     <p className="text-sm text-slate-600">{options.canSeeRemote ? "Список участников доступных вам годов, включая дистанционное участие." : "Список ограничен назначенными вам площадками. Отключённые площадки сохраняют ранее зарегистрированных участников."}</p>
@@ -52,6 +67,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
       </div>
       <Button className="mt-5" disabled={busy}>{busy ? "Загрузка…" : "Показать участников"}</Button>
     </form>
+    <Button variant="outline" disabled={busy} onClick={() => void download()}>Скачать CSV по фильтрам (все страницы)</Button>
     {message && <p role="alert" className="rounded-lg border border-border bg-white p-4">{message}</p>}
     <div aria-live="polite" aria-busy={busy}>
       {busy && <p>Загрузка списка…</p>}
