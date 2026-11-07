@@ -13,8 +13,8 @@ export function registrationState(edition: Window, now: Date) {
 const date = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 export const editionSettingsSchema = z.object({
   editionId: z.uuid(), revision: z.int().nonnegative(), title: z.string().trim().min(1).max(200),
-  registrationOpensAt: date, registrationClosesAt: date, registrationManuallyClosed: z.boolean(), isCurrent: z.boolean(),
-}).refine((x) => x.registrationOpensAt < x.registrationClosesAt, "Начало должно быть раньше окончания");
+  registrationOpensAt: date.nullable(), registrationClosesAt: date.nullable(), registrationManuallyClosed: z.boolean(), isCurrent: z.boolean(),
+}).strict().refine((x) => (!x.registrationOpensAt && !x.registrationClosesAt) || (!!x.registrationOpensAt && !!x.registrationClosesAt && x.registrationOpensAt < x.registrationClosesAt), "Начало должно быть раньше окончания");
 const venueFields = {
   editionId: z.uuid(), label: z.string().trim().min(1).max(200), address: z.string().trim().min(1).max(500),
   room: z.string().trim().max(200).default(""), instructions: z.string().trim().max(4000).default(""),

@@ -20,6 +20,10 @@ export async function saveEdition(db: PrismaClient, actorId: string, raw: unknow
     await lockEdition(tx, input.editionId);
     await authorizeStaff(tx, actorId, "edition:manage", input.editionId);
     const old = await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId } });
+    // Legacy settings endpoint must never change the registration window, even directly.
+    if ((old.registrationOpensAt?.getTime() ?? null) !== (input.registrationOpensAt?.getTime() ?? null) ||
+        (old.registrationClosesAt?.getTime() ?? null) !== (input.registrationClosesAt?.getTime() ?? null) ||
+        old.registrationManuallyClosed !== input.registrationManuallyClosed) throw new AccessDenied("FORBIDDEN");
     if (old.revision !== input.revision) throw new OlympiadError("CONFLICT", "Настройки уже изменены. Обновите страницу.");
     if (old.isCurrent && !input.isCurrent) throw new OlympiadError("CONFLICT", "Чтобы сменить текущий выпуск, назначьте текущим другой год.");
     if (input.isCurrent) {

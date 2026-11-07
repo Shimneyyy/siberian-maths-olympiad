@@ -5,8 +5,6 @@ import { Button } from "./ui/button";
 import type { organizerOlympiadView } from "@/lib/olympiad-view";
 type Editions = Awaited<ReturnType<typeof organizerOlympiadView>>;
 const field = "mt-2 block w-full rounded-lg border border-border bg-white p-3";
-function localTime(value: string | null) { return value ? new Date(new Date(value).getTime() + 7 * 3600000).toISOString().slice(0, 16) : ""; }
-function utc(value: FormDataEntryValue | null) { return new Date(`${String(value)}:00+07:00`).toISOString(); }
 function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; knownVenues: { id: string; label: string }[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -26,15 +24,13 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
     <h2 className="text-2xl font-semibold">{edition.title} · {edition.year}{edition.isCurrent && " · Текущая"}</h2>
     <form className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
-      await send("/api/editions", "PATCH", { editionId: edition.id, revision: edition.revision, title: form.get("title"), registrationOpensAt: utc(form.get("opens")), registrationClosesAt: utc(form.get("closes")), registrationManuallyClosed: form.get("closed") === "on", isCurrent: edition.isCurrent || form.get("current") === "on" });
+      await send("/api/editions", "PATCH", { editionId: edition.id, revision: edition.revision, title: form.get("title"), registrationOpensAt: edition.opensAt, registrationClosesAt: edition.closesAt, registrationManuallyClosed: edition.registrationManuallyClosed, isCurrent: edition.isCurrent || form.get("current") === "on" });
     }}>
       <label className="block">Название<input name="title" required maxLength={200} defaultValue={edition.title} className={field} /></label>
-      <p className="text-sm text-slate-600">Все даты ниже — Новосибирск (UTC+7). Регистрация открывается в момент начала и закрывается в момент окончания.</p>
-      <div className="grid gap-4 sm:grid-cols-2"><label>Начало регистрации<input name="opens" type="datetime-local" required defaultValue={localTime(edition.opensAt)} className={field} /></label><label>Окончание регистрации<input name="closes" type="datetime-local" required defaultValue={localTime(edition.closesAt)} className={field} /></label></div>
-      <label className="flex gap-3"><input name="closed" type="checkbox" defaultChecked={edition.registrationManuallyClosed} />Закрыть регистрацию вручную, независимо от расписания</label>
+      <p>Сроки и ручное закрытие меняет только технический администратор.</p>
       {!edition.isCurrent && <label className="flex gap-3"><input name="current" type="checkbox" />Сделать этот выпуск текущим</label>}
       <p className="text-sm text-slate-600">Для смены текущего выпуска нужны полномочия на прежний и новый годы.</p>
-      <Button disabled={busy}>Сохранить сроки и настройки</Button>
+      <Button disabled={busy}>Сохранить название и текущий выпуск</Button>
     </form>
     <h3 className="border-t border-border pt-6 text-xl font-semibold">Площадки этого года</h3>
     {!edition.venues.length && <p>Площадки ещё не добавлены.</p>}

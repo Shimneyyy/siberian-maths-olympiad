@@ -188,13 +188,14 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
   const a = await db.user.create({ data: { name: "Учебный участник HTTP А", email: `annual-a-${tag}@example.test`, emailVerified: true } });
   const b = await db.user.create({ data: { name: "Чужой участник HTTP Б", email: `annual-b-${tag}@example.test`, emailVerified: true } });
   const staff = await db.user.create({ data: { name: "Учебный организатор списка HTTP", email: `roster-staff-${tag}@example.test`, emailVerified: true, role: "VENUE_ORGANIZER" } });
-  const users = [chief.id, a.id, b.id, staff.id];
+  const admin = await db.user.create({ data: { name: "Учебный администратор", email: `admin-${tag}@example.test`, role: "TECHNICAL_ADMIN", emailVerified: true } });
+  const users = [chief.id, a.id, b.id, staff.id, admin.id];
   const opening = new Date(Date.now() - 3600000), closing = new Date(Date.now() + 86400000);
   const edition = await db.olympiadEdition.create({ data: { year: 6500, title: "Учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
   const next = await db.olympiadEdition.create({ data: { year: 6501, title: "Следующий учебный выпуск HTTP", registrationOpensAt: opening, registrationClosesAt: closing } });
   const editions = [edition.id, next.id];
   try {
-    for (const u of [chief, a, b, staff]) await db.account.create({ data: { accountId: u.id, providerId: "credential", userId: u.id, password: await hashPassword(password) } });
+    for (const u of [chief, a, b, staff, admin]) await db.account.create({ data: { accountId: u.id, providerId: "credential", userId: u.id, password: await hashPassword(password) } });
     for (const u of [a, b]) {
       await db.studentProfile.create({ data: { userId: u.id, fullName: u.name, universityId: university.id, courseId: course.id } });
       await db.consentRecord.create({ data: { userId: u.id, purpose: "synthetic-demo-only", textVersion: "demo-only-v1", textHash: "a".repeat(64) } });
@@ -206,7 +207,20 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
     const chiefCookies = new Map(cookies);
     const settings = { editionId: edition.id, revision: 0, title: edition.title, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, isCurrent: true };
-    assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 200);
+    assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
+    cookies.clear();
+    assert.equal((await request("/api/auth/sign-in/email", { email: admin.email, password })).status, 200);
+    const adminEnrollment = await (await request("/api/auth/two-factor/enable", { password, method: "totp" })).json() as { totpURI: string };
+    assert.equal((await request("/api/admin/schedule", { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, password })).status, 403);
+    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(adminEnrollment.totpURI), trustDevice: false })).status, 200);
+    const adminCookies = new Map(cookies);
+    const windowInput = { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, password };
+    assert.equal((await request("/api/admin/schedule", { ...windowInput, password: "wrong" })).status, 403);
+    assert.equal((await request("/api/admin/schedule", windowInput, true, "http://untrusted.test")).status, 403);
+    assert.equal((await request("/api/admin/schedule", windowInput)).status, 200);
+    assert.equal((await request("/api/registrations/search", { editionId: edition.id })).status, 403);
+    assert.equal((await request("/cabinet/admin")).status, 200);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
     assert.equal((await request("/api/editions", { ...settings, editionId: next.id }, true, origin, "PATCH")).status, 403);
     const available = await (await request("/api/editions")).json() as { id: string }[];
     assert.deepEqual(available.map((e) => e.id), [edition.id]);
@@ -223,7 +237,9 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await closed.json() as { code: string }).code, "REGISTRATION_CLOSED");
     assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
     cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
-    assert.equal((await request("/api/editions", { ...settings, revision: 1, registrationManuallyClosed: false }, true, origin, "PATCH")).status, 200);
+    assert.equal((await request("/api/editions", { ...settings, revision: 1, registrationManuallyClosed: false }, true, origin, "PATCH")).status, 403);
+    cookies.clear(); for (const [k, v] of adminCookies) cookies.set(k, v);
+    assert.equal((await request("/api/admin/schedule", { ...windowInput, revision: 1, registrationManuallyClosed: false })).status, 200);
     cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
     assert.equal((await request("/api/participations", { ...input, userId: b.id })).status, 400);
     const first = await request("/api/participations", input);

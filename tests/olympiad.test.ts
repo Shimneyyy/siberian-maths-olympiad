@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { hashPassword } from "better-auth/crypto";
+import { saveRegistrationWindow } from "../src/lib/admin";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { randomUUID, createHash } from "node:crypto";
@@ -30,6 +32,8 @@ async function fixture(year: number) {
     };
     const a = await student("А"), b = await student("Б");
     const chief = await tx.user.create({ data: { name: "Синтетический главный организатор", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
+    const admin = await tx.user.create({ data: { name: "Тестовый администратор", email: `${randomUUID()}@example.test`, role: "TECHNICAL_ADMIN", emailVerified: true, twoFactorEnabled: true } });
+    await tx.account.create({ data: { accountId: admin.id, userId: admin.id, providerId: "credential", password: await hashPassword("Synthetic-admin-password") } });
     const staff = await tx.user.create({ data: { name: "Синтетический организатор", email: `${randomUUID()}@example.test`, role: "VENUE_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
     const schedule = { registrationOpensAt: opens, registrationClosesAt: closes };
     const first = await tx.olympiadEdition.create({ data: { year, title: "Тестовый выпуск", ...schedule } });
@@ -40,13 +44,13 @@ async function fixture(year: number) {
     const site = await tx.editionVenue.create({ data: { editionId: first.id, venueId: venue.id, label: "Площадка первого года", address: "Синтетический адрес первого года" } });
     const otherSite = await tx.editionVenue.create({ data: { editionId: first.id, venueId: alternate.id, label: "Другая площадка", address: "Синтетический адрес" } });
     const nextSite = await tx.editionVenue.create({ data: { editionId: next.id, venueId: venue.id, label: "Площадка второго года", address: "Синтетический адрес второго года" } });
-    return { university, course, nextCourse, a, b, chief, staff, first, next, site, otherSite, nextSite };
+    return { university, course, nextCourse, a, b, chief, admin, staff, first, next, site, otherSite, nextSite };
   });
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function clean(f: Fixture) {
   await db.$transaction(async (tx) => {
-    const years = [f.first.id, f.next.id], users = [f.a.id, f.b.id, f.chief.id, f.staff.id];
+    const years = [f.first.id, f.next.id], users = [f.a.id, f.b.id, f.chief.id, f.staff.id, f.admin.id];
     const venues = await tx.editionVenue.findMany({ where: { editionId: { in: years } }, select: { venueId: true } });
     await tx.participation.deleteMany({ where: { editionId: { in: years } } });
     await tx.auditEvent.deleteMany({ where: { OR: [{ editionId: { in: years } }, { actorId: { in: users } }] } });
@@ -158,9 +162,9 @@ test("service checks actual server acceptance time and manual closure inside the
     await assert.rejects(registerParticipation(db, f.a.id, registration(f), () => new Date(opens.getTime() - 1)), hasCode("REGISTRATION_CLOSED"));
     await registerParticipation(db, f.a.id, registration(f), () => opens);
     await assert.rejects(registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => closes), hasCode("REGISTRATION_CLOSED"));
-    await saveEdition(db, f.chief.id, { ...settings(f), registrationManuallyClosed: true });
+    await saveRegistrationWindow(db, f.admin.id, { editionId: f.first.id, revision: 0, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), registrationManuallyClosed: true, password: "Synthetic-admin-password" });
     await assert.rejects(registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => opens), hasCode("REGISTRATION_CLOSED"));
-    await saveEdition(db, f.chief.id, settings(f, 1));
+    await saveRegistrationWindow(db, f.admin.id, { editionId: f.first.id, revision: 1, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), registrationManuallyClosed: false, password: "Synthetic-admin-password" });
     await registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => opens);
   } finally { await clean(f); }
 });

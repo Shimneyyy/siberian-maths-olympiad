@@ -6,6 +6,7 @@ import { db } from "./db";
 import { AccessDenied } from "./access";
 import { BodyTooLarge, readJsonBody } from "./http-body";
 import { OlympiadError } from "./olympiad-rules";
+import { AdminRateLimit } from "./admin";
 import { Prisma } from "@prisma/client";
 const headers = { "Cache-Control": "private, no-store" };
 export async function olympiadRequest(request: Request, operation: (actorId: string, body: unknown) => Promise<unknown>) {
@@ -18,6 +19,7 @@ export async function olympiadRequest(request: Request, operation: (actorId: str
     const result = await operation(session.user.id, body);
     return Response.json(result, { headers });
   } catch (error) {
+    if (error instanceof AdminRateLimit) return Response.json({ error: "Слишком много попыток" }, { status: 429, headers });
     if (error instanceof BodyTooLarge) return Response.json({ error: "Слишком большой запрос" }, { status: 413, headers });
     if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ error: "Проверьте поля формы" }, { status: 400, headers });
     if (error instanceof APIError || error instanceof AccessDenied) {

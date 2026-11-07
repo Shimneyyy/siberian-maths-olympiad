@@ -15,7 +15,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "test:db": "tsx --test tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts tests/olympiad.test.ts tests/registrations.test.ts",
+    "test:db": "tsx --test --test-concurrency=1 tests/admin.test.ts tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts tests/olympiad.test.ts tests/registrations.test.ts",
     "test:http": "node scripts/test-http.mjs",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
     "staff:bootstrap": "tsx scripts/bootstrap-chief.ts",
