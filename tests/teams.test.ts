@@ -32,12 +32,14 @@ async function fixture() {
 let f: Awaited<ReturnType<typeof fixture>>;
 before(async () => { f = await fixture(); });
 beforeEach(async () => {
+  await db.rateLimit.deleteMany({ where: { key: { in: f.users.map(u => `team-invite:${u.id}`) } } });
   await db.team.deleteMany({ where: { editionId: { in: [f.edition.id, f.next.id] } } });
   await db.olympiadEdition.updateMany({ where: { id: { in: [f.edition.id, f.next.id] } }, data: { registrationManuallyClosed: false } });
 });
 after(async () => {
   if (f) {
     const editions = [f.edition.id, f.next.id], users = [...f.users.map(u => u.id), f.staff.id];
+    await db.rateLimit.deleteMany({ where: { key: { in: users.map(id => `team-invite:${id}`) } } });
     await db.team.deleteMany({ where: { editionId: { in: editions } } });
     await db.participation.deleteMany({ where: { editionId: { in: editions } } });
     await db.auditEvent.deleteMany({ where: { OR: [{ editionId: { in: editions } }, { actorId: { in: users } }] } });
@@ -73,4 +75,58 @@ test("teams are private to members, scoped to their annual university and blocke
   await db.olympiadEdition.update({ where: { id: f.edition.id }, data: { registrationManuallyClosed: true } });
   await assert.rejects(createTeam(db, f.users[1].id, input()), AccessDenied);
   assert.equal((await teamsView(db, f.users[0].id))[0].team?.name, "УВ-1", "Closed years retain team history");
+});
+
+test("exact-email invitations require recipient confirmation and do not reveal unrelated accounts", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const team = await createTeam(db, f.users[0].id, input());
+  const invite = (email: string) => teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email });
+  await invite(f.users[1].email);
+  for (const email of [f.users[8].email, f.users[9].email, `missing-${randomUUID()}@example.test`]) assert.deepEqual(await invite(email), { status: "ok" });
+  assert.equal(await db.teamInvitation.count({ where: { teamId: team.id } }), 1);
+  const incoming = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  assert.equal(incoming.teamName, "УВ-1");
+  const accept = { editionId: f.edition.id, operation: "acceptInvitation", invitationId: incoming.id, revision: incoming.revision };
+  await assert.rejects(teamAction(db, f.users[2].id, accept), AccessDenied);
+  await assert.rejects(teamAction(db, f.users[1].id, { ...accept, actorId: f.users[0].id }));
+  await teamAction(db, f.users[1].id, accept);
+  await assert.rejects(teamAction(db, f.users[1].id, accept), /Приглашение уже изменено/);
+  const member = (await teamsView(db, f.users[1].id))[0].team!;
+  assert.equal(member.members.length, 2); assert.equal(member.invitations.length, 0);
+  await assert.rejects(teamAction(db, f.users[1].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[2].email }), AccessDenied);
+});
+
+test("captain transfer requires target confirmation; departure/exclusion and revocation update current rights", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const team = await createTeam(db, f.users[0].id, input());
+  await teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[1].email });
+  const invitation = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await teamAction(db, f.users[1].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: invitation.id, revision: invitation.revision });
+  await teamAction(db, f.users[0].id, { operation: "requestCaptain", editionId: f.edition.id, teamId: team.id, participationId: f.participations[1].id });
+  assert.equal((await db.team.findUniqueOrThrow({ where: { id: team.id } })).captainParticipationId, f.participations[0].id);
+  const transfer = (await teamsView(db, f.users[1].id))[0].team!.transfer!;
+  const accept = { operation: "acceptCaptain", editionId: f.edition.id, teamId: team.id, revision: transfer.revision };
+  await assert.rejects(teamAction(db, f.users[0].id, accept), AccessDenied);
+  await teamAction(db, f.users[1].id, accept);
+  assert.equal((await db.team.findUniqueOrThrow({ where: { id: team.id } })).captainParticipationId, f.participations[1].id);
+  await assert.rejects(teamAction(db, f.users[0].id, { operation: "exclude", editionId: f.edition.id, teamId: team.id, participationId: f.participations[1].id }), AccessDenied);
+  await teamAction(db, f.users[0].id, { operation: "leave", editionId: f.edition.id, teamId: team.id });
+  assert.equal(await db.teamMember.findUnique({ where: { participationId: f.participations[0].id } }), null);
+  await assert.rejects(teamAction(db, f.users[1].id, { operation: "leave", editionId: f.edition.id, teamId: team.id }), /Капитан сначала/);
+  await teamAction(db, f.users[1].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[2].email });
+  const outgoing = (await teamsView(db, f.users[1].id))[0].team!.invitations[0];
+  await teamAction(db, f.users[1].id, { operation: "revokeInvitation", editionId: f.edition.id, teamId: team.id, invitationId: outgoing.id, revision: outgoing.revision });
+  await assert.rejects(teamAction(db, f.users[2].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: outgoing.id, revision: outgoing.revision }), /Приглашение уже изменено/);
+});
+
+test("closed editions freeze pending invitation decisions and teams cannot cross university/year boundaries", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const team = await createTeam(db, f.users[0].id, input());
+  await teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[1].email });
+  const invitation = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await db.olympiadEdition.update({ where: { id: f.edition.id }, data: { registrationManuallyClosed: true } });
+  await assert.rejects(teamAction(db, f.users[1].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: invitation.id, revision: invitation.revision }), AccessDenied);
+  assert.equal((await teamsView(db, f.users[0].id))[0].canChange, false);
+  const audit = await db.auditEvent.findMany({ where: { objectId: team.id } });
+  assert.ok(!JSON.stringify(audit).includes(f.users[1].email));
 });

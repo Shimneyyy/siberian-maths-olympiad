@@ -111,7 +111,7 @@ test("pagination has a unique tie-breaker, bounded pages, and an allowlisted DTO
   const emailAsc = await listRegistrations(db, f.chief.id, { editionId: f.editions[0].id, sort: "email", pageSize: 100 });
   const emailDesc = await listRegistrations(db, f.chief.id, { editionId: f.editions[0].id, sort: "email", direction: "desc", pageSize: 100 });
   assert.deepEqual(emailAsc.rows.map((r) => r.email).reverse(), emailDesc.rows.map((r) => r.email));
-  assert.deepEqual(Object.keys(first.rows[0]).sort(),["attendance","id","fullName","email","universityName","courseLabel","status","format","remoteZone","registeredAt","venue"].sort());
+  assert.deepEqual(Object.keys(first.rows[0]).sort(),["teamName","attendance","id","fullName","email","universityName","courseLabel","status","format","remoteZone","registeredAt","venue"].sort());
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, pageSize: 1000 }));
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, sort: "consentId" }));
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, actorId: f.chief.id }));
@@ -177,4 +177,22 @@ test("attendance requires scope/MFA and revision; concurrent edits conflict and 
   const audit = await db.auditEvent.findMany({ where: { action: "ATTENDANCE_UPDATED", objectId: input.participationId } });
   assert.equal(audit.length, 2);
   assert.ok(!JSON.stringify(audit).includes("@example.test"));
+});
+
+test("team filters, facets and CSV never expand a venue organizer's participant scope", async () => {
+  const { exportRegistrations } = await import("../src/lib/registrations");
+  const foreign = await db.participation.findFirstOrThrow({ where: { editionVenueId: f.sites[2].id } });
+  const remote = await db.participation.findFirstOrThrow({ where: { editionId: f.editions[0].id, format: "REMOTE" } });
+  const team = await db.team.create({ data: { editionId: f.editions[0].id, universityId: f.university.id, captainParticipationId: f.aIds[0], slot: 1, name: "Учебная смешанная команда", coachName: "Учебный тренер" } });
+  try {
+    for (const participationId of [f.aIds[0], foreign.id, remote.id]) await db.teamMember.create({ data: { participationId, teamId: team.id, editionId: f.editions[0].id, universityId: f.university.id } });
+    const input = { editionId: f.editions[0].id, teamId: team.id };
+    const staff = await listRegistrations(db, f.staff.id, input);
+    assert.equal(staff.total, 1); assert.equal(staff.rows[0].teamName, team.name);
+    assert.deepEqual(staff.filters.teamNames, [{ id: team.id, name: team.name }]);
+    assert.equal((await listRegistrations(db, f.chief.id, input)).total, 3);
+    const csv = await exportRegistrations(db, f.staff.id, input);
+    assert.ok(csv.includes(team.name)); assert.ok(!csv.includes(foreign.fullName)); assert.ok(!csv.includes(remote.fullName));
+    assert.equal(csv.trimEnd().split("\r\n").length, 2);
+  } finally { await db.team.delete({ where: { id: team.id } }); }
 });

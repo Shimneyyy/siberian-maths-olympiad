@@ -40,15 +40,26 @@ export async function teamsView(db: PrismaClient, actorId: string) {
   const actor = await db.user.findUnique({ where: { id: actorId } });
   if (!actor?.emailVerified || actor.role !== "STUDENT") throw new AccessDenied("FORBIDDEN");
   const rows = await db.participation.findMany({ where: { userId: actorId }, orderBy: { edition: { year: "desc" } }, select: {
-    id: true, status: true, fullName: true, universityName: true, editionId: true,
+    id: true, status: true, fullName: true, universityName: true, universityId: true, editionId: true,
     edition: { select: { year: true, title: true, registrationClosesAt: true, registrationManuallyClosed: true } },
-    teamMembership: { select: { team: { select: { id: true, name: true, coachName: true, captainParticipationId: true,
+    teamMembership: { select: { team: { select: { id: true, name: true, coachName: true, captainParticipationId: true, captainTransfer: { select: { targetParticipationId: true, revision: true } },
       members: { orderBy: { joinedAt: "asc" }, select: { participation: { select: { id: true, fullName: true } } } } } } } },
   } });
-  return rows.map(p => ({ participationId: p.id, editionId: p.editionId, year: p.edition.year, title: p.edition.title,
-    fullName: p.fullName, universityName: p.universityName, canChange: p.status === "REGISTERED" && teamChangesOpen(p.edition, new Date()),
-    team: p.teamMembership ? { id: p.teamMembership.team.id, name: p.teamMembership.team.name, coachName: p.teamMembership.team.coachName,
-      captainParticipationId: p.teamMembership.team.captainParticipationId,
-      members: p.teamMembership.team.members.map(m => m.participation) } : null,
-  }));
+  const result = [];
+  for (const p of rows) {
+    const team = p.teamMembership?.team;
+    const incoming = await db.teamInvitation.findMany({ where: { targetParticipationId: p.id, editionId: p.editionId, status: "PENDING", team: { universityId: p.universityId } },
+      select: { id: true, revision: true, team: { select: { name: true, captain: { select: { fullName: true } } } } } });
+    const outgoing = team && team.captainParticipationId === p.id ? await db.teamInvitation.findMany({ where: { teamId: team.id, status: "PENDING", team: { captainParticipationId: p.id } },
+      select: { id: true, revision: true, target: { select: { user: { select: { email: true } } } } } }) : [];
+    result.push({ participationId: p.id, editionId: p.editionId, year: p.edition.year, title: p.edition.title,
+      fullName: p.fullName, universityName: p.universityName, canChange: p.status === "REGISTERED" && teamChangesOpen(p.edition, new Date()),
+      invitations: incoming.map(i => ({ id: i.id, revision: i.revision, teamName: i.team.name, captainName: i.team.captain.fullName })),
+      team: team ? { id: team.id, name: team.name, coachName: team.coachName,
+        captainParticipationId: team.captainParticipationId, transfer: team.captainTransfer,
+        invitations: outgoing.map(i => ({ id: i.id, revision: i.revision, email: i.target.user.email })),
+        members: team.members.map(m => m.participation) } : null,
+    });
+  }
+  return result;
 }

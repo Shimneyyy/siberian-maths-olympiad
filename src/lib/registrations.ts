@@ -5,11 +5,11 @@ import { OlympiadError } from "./olympiad-rules";
 import { AccessDenied, authorizeStaff } from "./access";
 
 export const registrationsQuerySchema = z.object({
-  editionId: z.uuid(), editionVenueId: z.uuid().optional(),
+  editionId: z.uuid(), editionVenueId: z.uuid().optional(), teamId: z.uuid().optional(),
   search: z.string().trim().max(100).default(""),
   universityName: z.string().max(300).optional(), courseLabel: z.string().max(200).optional(),
   status: z.enum(["REGISTERED", "CANCELLED"]).optional(), format: z.enum(["ONSITE", "REMOTE"]).optional(),
-  sort: z.enum(["fullName", "email", "universityName", "courseLabel", "registeredAt", "status", "format"]).default("fullName"),
+  sort: z.enum(["fullName", "email", "universityName", "courseLabel", "registeredAt", "status", "format", "teamName"]).default("fullName"),
   direction: z.enum(["asc", "desc"]).default("asc"),
   page: z.int().min(1).max(10000).default(1),
   pageSize: z.union([z.literal(10), z.literal(25), z.literal(50), z.literal(100)]).default(25),
@@ -57,7 +57,7 @@ export async function registrationsOptions(db: PrismaClient, actorId: string) {
 }
 function orderBy(input: RegistrationsQuery): Prisma.ParticipationOrderByWithRelationInput[] {
   const direction = input.direction;
-  const primary: Prisma.ParticipationOrderByWithRelationInput = input.sort === "email" ? { user: { email: direction } }
+  const primary: Prisma.ParticipationOrderByWithRelationInput = input.sort === "teamName" ? { teamMembership: { team: { name: direction } } } : input.sort === "email" ? { user: { email: direction } }
     : input.sort === "registeredAt" ? { createdAt: direction } : { [input.sort]: direction };
   return [primary, { id: "asc" }];
 }
@@ -71,6 +71,7 @@ function registrationWhere(input: RegistrationsQuery, scope: Prisma.Participatio
     ] });
     if (input.universityName !== undefined) predicates.push({ universityName: input.universityName });
     if (input.courseLabel !== undefined) predicates.push({ courseLabel: input.courseLabel });
+    if (input.teamId) predicates.push({ teamMembership: { teamId: input.teamId } });
     if (input.status) predicates.push({ status: input.status });
     if (input.format) predicates.push({ format: input.format });
     return { AND: predicates };
@@ -85,17 +86,18 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
     const page = Math.min(input.page, pages);
     // An interactive PostgreSQL transaction owns one connection; run its queries sequentially.
     const rows = await tx.participation.findMany({ where, orderBy: orderBy(input), skip: (page - 1) * input.pageSize, take: input.pageSize,
-      select: { attendance: { select: { status: true, revision: true } }, id: true, fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
+      select: { teamMembership: { select: { team: { select: { name: true } } } }, attendance: { select: { status: true, revision: true } }, id: true, fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
         user: { select: { email: true } },
         editionVenue: { select: { label: true, active: true, venue: { select: { name: true } } } },
       },
     });
     const universityNames = await tx.participation.findMany({ where: scope, distinct: ["universityName"], select: { universityName: true }, orderBy: { universityName: "asc" } });
     const courseLabels = await tx.participation.findMany({ where: scope, distinct: ["courseLabel"], select: { courseLabel: true }, orderBy: { courseLabel: "asc" } });
+    const teamNames = await tx.team.findMany({ where: { editionId: input.editionId, members: { some: { participation: scope } } }, select: { id: true, name: true }, orderBy: [{ name: "asc" }, { id: "asc" }] });
     const edition = await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId }, select: { title: true, year: true } });
     return { editionId: input.editionId, editionTitle: edition.title, year: edition.year, page, pages, pageSize: input.pageSize, total,
-      filters: { universityNames: universityNames.map((x) => x.universityName), courseLabels: courseLabels.map((x) => x.courseLabel) },
-      rows: rows.map((p) => ({ attendance: p.attendance ?? { status: "UNMARKED" as const, revision: 0 }, id: p.id, fullName: p.fullName, email: p.user.email, universityName: p.universityName, courseLabel: p.courseLabel,
+      filters: { teamNames, universityNames: universityNames.map((x) => x.universityName), courseLabels: courseLabels.map((x) => x.courseLabel) },
+      rows: rows.map((p) => ({ teamName: p.teamMembership?.team.name ?? null, attendance: p.attendance ?? { status: "UNMARKED" as const, revision: 0 }, id: p.id, fullName: p.fullName, email: p.user.email, universityName: p.universityName, courseLabel: p.courseLabel,
         status: p.status, format: p.format, remoteZone: p.remoteZone, registeredAt: p.createdAt.toISOString(),
         venue: p.editionVenue ? { label: p.editionVenue.label || p.editionVenue.venue.name, active: p.editionVenue.active } : null,
       })),
@@ -114,11 +116,11 @@ export async function exportRegistrations(db: PrismaClient, actorId: string, raw
     // Bound the synchronous response; fail explicitly rather than return a truncated export.
     if (total > 10000) throw new OlympiadError("CONFLICT", "Слишком большая выгрузка. Уточните фильтры (не более 10000 строк).");
     const rows = await tx.participation.findMany({ where, orderBy: orderBy(input),
-      select: { fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
+      select: { teamMembership: { select: { team: { select: { name: true } } } }, fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
         user: { select: { email: true } }, editionVenue: { select: { label: true, venue: { select: { name: true } } } } },
     });
-    const csv = "\uFEFF" + csvRow(["ФИО", "Email", "Вуз", "Курс", "Статус", "Формат", "Площадка / часовой пояс", "Дата регистрации (UTC)"]) +
-      rows.map(p => csvRow([p.fullName, p.user.email, p.universityName, p.courseLabel,
+    const csv = "\uFEFF" + csvRow(["ФИО", "Email", "Вуз", "Курс", "Команда", "Статус", "Формат", "Площадка / часовой пояс", "Дата регистрации (UTC)"]) +
+      rows.map(p => csvRow([p.fullName, p.user.email, p.universityName, p.courseLabel, p.teamMembership?.team.name ?? "",
         p.status === "REGISTERED" ? "Зарегистрирован" : "Участие отменено", p.format === "ONSITE" ? "Очно" : "Дистанционно",
         p.editionVenue ? (p.editionVenue.label || p.editionVenue.venue.name) : p.remoteZone === "MSK" ? "МСК UTC+3" : "НСК UTC+7", p.createdAt.toISOString()])).join("");
     await tx.auditEvent.create({ data: { actorId, action: "REGISTRATIONS_EXPORTED", objectType: "OlympiadEdition", objectId: input.editionId, editionId: input.editionId, outcome: "SUCCESS", details: { rowCount: rows.length, ...(input.editionVenueId ? { editionVenueId: input.editionVenueId } : {}) } } });

@@ -328,6 +328,24 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await request("/api/registrations/export", rosterQuery)).status, 403);
     const visible = await (await request("/api/registrations/options")).json() as { editions: unknown[] };
     assert.equal(visible.editions.length, 0);
+    const savedStaffCookies = new Map(cookies);
+    const invited = await db.user.create({ data: { email: `invited-http-${tag}@example.test`, name: "Учебный приглашённый HTTP", emailVerified: true } }); users.push(invited.id);
+    await db.account.create({ data: { accountId: invited.id, providerId: "credential", userId: invited.id, password: await hashPassword(password) } });
+    const invitedConsent = await db.consentRecord.create({ data: { userId: invited.id, purpose: "synthetic-demo-only", textVersion: "demo", textHash: "a".repeat(64) } });
+    await db.participation.create({ data: { userId: invited.id, editionId: edition.id, format: "REMOTE", remoteZone: "NSK", fullName: invited.name, universityId: university.id, universityName: university.name, universityAbbreviation: university.abbreviation, courseId: course.id, courseLabel: course.label, consentId: invitedConsent.id } });
+    cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
+    const captainsTeam = (await (await request("/api/teams")).json() as { team: { id: string } | null }[]).find(e => e.team)!.team!;
+    const invitationInput = { operation: "invite", editionId: edition.id, teamId: captainsTeam.id, email: invited.email };
+    assert.equal((await request("/api/teams/action", invitationInput, true, "http://untrusted.test")).status, 403);
+    assert.equal((await request("/api/teams/action", invitationInput)).status, 200);
+    await db.rateLimit.deleteMany();
+    cookies.clear();
+    assert.equal((await request("/api/auth/sign-in/email", { email: invited.email, password })).status, 200);
+    const inbox = (await (await request("/api/teams")).json() as { invitations: { id: string; revision: number }[] }[])[0].invitations[0];
+    assert.equal((await request("/api/teams/action", { operation: "acceptInvitation", editionId: edition.id, invitationId: inbox.id, revision: inbox.revision })).status, 200);
+    assert.equal((await request("/cabinet/teams")).status, 200);
+    cookies.clear(); for (const [k, v] of savedStaffCookies) cookies.set(k, v);
+
     assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: chief.email, name: chief.name, operation: "assign", password })).status, 403);
     const staffAdminPage = await request("/cabinet/admin"); assert.equal(staffAdminPage.status, 307);
     cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);

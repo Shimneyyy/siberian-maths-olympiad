@@ -6,6 +6,16 @@ import type { teamsView } from "@/lib/teams";
 export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnType<typeof teamsView>>; enabled: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  async function act(data: Record<string, unknown>) {
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/teams/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const result = await response.json();
+      setMessage(response.ok ? (data.operation === "invite" ? "Запрос обработан. Приглашение в ЛК доступно свободному участнику того же вуза и года. Письмо не отправляется." : "Изменения сохранены.") : result.error || "Действие недоступно");
+      if (response.ok) router.refresh();
+    } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
+    finally { setBusy(false); }
+  }
   return <div className="space-y-6"><p>До трёх команд от вуза, до пяти участников включая капитана. Тренер — ФИО; капитан может указать себя. Только синтетические данные.</p>
     {!editions.length && <p>Сначала зарегистрируйте участие на год олимпиады.</p>}
     {editions.map(e => <section key={e.editionId} className="space-y-3 rounded border border-border p-5"><h2>{e.title} · {e.year}</h2>
@@ -18,6 +28,16 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
           if (response.ok) router.refresh();
         } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); } finally { setBusy(false); }
       }}><label>ФИО тренера<input className="mt-2 block w-full rounded border p-2" name="coachName" required minLength={3} maxLength={200} /></label><Button disabled={busy || !enabled}>Создать команду</Button></form>}
+      {e.invitations.map(i => <div className="space-y-2 rounded border p-3" key={i.id}><p>Приглашение в {i.teamName}, капитан {i.captainName}</p><Button disabled={busy || !enabled || !e.canChange || !!e.team} onClick={() => void act({ editionId: e.editionId, operation: "acceptInvitation", invitationId: i.id, revision: i.revision })}>Принять приглашение</Button> <Button variant="outline" disabled={busy || !enabled || !e.canChange} onClick={() => void act({ editionId: e.editionId, operation: "declineInvitation", invitationId: i.id, revision: i.revision })}>Отклонить</Button></div>)}
+      {e.team && e.canChange && <div className="space-y-4 border-t pt-4">
+        {e.team.captainParticipationId === e.participationId ? <>
+          <form className="space-y-3" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void act({ editionId: e.editionId, teamId: e.team!.id, operation: "invite", email: data.get("email") }); }}><label>Пригласить по точному email<input className="mt-2 block w-full rounded border p-2" name="email" type="email" required maxLength={254} /></label><Button disabled={busy || !enabled}>Пригласить в ЛК</Button></form>
+          {e.team.invitations.map(i => <div key={i.id}><p>Ожидает ответа: {i.email}</p><Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "revokeInvitation", invitationId: i.id, revision: i.revision })}>Отозвать приглашение</Button></div>)}
+          {e.team.members.filter(m => m.id !== e.participationId).map(m => <div className="flex flex-wrap gap-3" key={m.id}><span>{m.fullName}</span><Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "exclude", participationId: m.id })}>Исключить</Button><Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "requestCaptain", participationId: m.id })}>Предложить капитанство</Button></div>)}
+          {e.team.transfer && <><p>Предложение капитанства ожидает подтверждения участником.</p><Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "cancelCaptain", revision: e.team!.transfer!.revision })}>Отозвать предложение</Button></>}
+        </> : <Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "leave" })}>Выйти из команды</Button>}
+        {e.team.transfer?.targetParticipationId === e.participationId && <div><p>Капитан предложил вам передать капитанство.</p><Button disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "acceptCaptain", revision: e.team!.transfer!.revision })}>Принять капитанство</Button> <Button variant="outline" disabled={busy || !enabled} onClick={() => void act({ editionId: e.editionId, teamId: e.team!.id, operation: "declineCaptain", revision: e.team!.transfer!.revision })}>Отклонить</Button></div>}
+      </div>}
     </section>)}{message && <p role="status">{message}</p>}
   </div>;
 }

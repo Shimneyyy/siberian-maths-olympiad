@@ -242,6 +242,9 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  teamInvitations TeamInvitation[]
+  captainTransfers CaptainTransfer[]
+  @@unique([id, editionId])
   captainedTeam Team? @relation("TeamCaptain")
   teamMembership TeamMember?
   @@unique([id, editionId, universityId])
@@ -301,6 +304,8 @@ model ParticipationCorrection {
 }
 
 model Team {
+  invitations TeamInvitation[]
+  captainTransfer CaptainTransfer?
   id String @id @default(uuid()) @db.Uuid
   editionId String @db.Uuid
   edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
@@ -316,6 +321,7 @@ model Team {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   @@unique([editionId, universityId, slot])
   @@unique([id, editionId, universityId])
+  @@unique([id, editionId])
 }
 
 model TeamMember {
@@ -327,4 +333,34 @@ model TeamMember {
   editionId String @db.Uuid
   universityId String @db.Uuid
   joinedAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+enum TeamInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+model TeamInvitation {
+  id String @id @default(uuid()) @db.Uuid
+  teamId String @db.Uuid
+  editionId String @db.Uuid
+  team Team @relation(fields: [teamId, editionId], references: [id, editionId], onDelete: Cascade)
+  targetParticipationId String @db.Uuid
+  target Participation @relation(fields: [targetParticipationId, editionId], references: [id, editionId], onDelete: Cascade)
+  status TeamInvitationStatus @default(PENDING)
+  revision Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([teamId, targetParticipationId])
+}
+model CaptainTransfer {
+  @@unique([teamId, editionId, universityId])
+  teamId String @id @db.Uuid
+  editionId String @db.Uuid
+  universityId String @db.Uuid
+  team Team @relation(fields: [teamId, editionId, universityId], references: [id, editionId, universityId], onDelete: Cascade)
+  targetParticipationId String @db.Uuid
+  target Participation @relation(fields: [targetParticipationId, editionId, universityId], references: [id, editionId, universityId], onDelete: Cascade)
+  revision Int @default(0)
 }
