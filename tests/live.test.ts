@@ -50,7 +50,7 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     await db.studentProfile.create({ data: { userId: student.id, fullName: student.name, universityId, courseId } });
     const recipient = await db.user.create({ data: { name: "Учебный приглашённый браузер", email: `browser-recipient-${tag}@example.test`, emailVerified: true } }); ids.push(recipient.id);
     const recipientConsent = await db.consentRecord.create({ data: { userId: recipient.id, purpose: "synthetic-demo-only", textVersion: "demo", textHash: "a".repeat(64) } });
-    await db.participation.create({ data: { userId: recipient.id, editionId, format: "ONSITE", editionVenueId: site.id, fullName: recipient.name, universityId, universityName: university.name, universityAbbreviation: university.abbreviation, courseId, courseLabel: course.label, consentId: recipientConsent.id } });
+    const recipientParticipation = await db.participation.create({ data: { userId: recipient.id, editionId, format: "ONSITE", editionVenueId: site.id, fullName: recipient.name, universityId, universityName: university.name, universityAbbreviation: university.abbreviation, courseId, courseLabel: course.label, consentId: recipientConsent.id } });
     const captainContext = await newContext(), recipientContext = await newContext();
     for (const [context, user] of [[captainContext, student], [recipientContext, recipient]] as const) {
       await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: await hashPassword(password) } });
@@ -74,8 +74,15 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     await recipientPage.getByRole("button", { name: "Принять приглашение" }).click();
     await recipientPage.getByRole("heading", { name: "УВ-1", exact: true }).waitFor();
     assert.equal(await db.teamMember.count({ where: { editionId } }), 2);
+    await recipientPage.goto(`${base}/cabinet/cancel?editionId=${editionId}&participationId=${recipientParticipation.id}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await recipientPage.getByRole("checkbox", { name: "Я понимаю, что восстановить участие нельзя" }).check();
+    const [cancelled] = await Promise.all([recipientPage.waitForResponse(r => new URL(r.url()).pathname === "/api/participations/cancel"), recipientPage.getByRole("button", { name: "Отменить участие", exact: true }).click()]);
+    assert.equal(cancelled.status(), 200);
+    assert.equal((await db.participation.findUniqueOrThrow({ where: { id: recipientParticipation.id } })).status, "CANCELLED");
+    assert.equal(await db.teamMember.count({ where: { editionId } }), 1);
+
     await captainPage.close(); await recipientPage.close();
-    console.info("Browser: profile snapshot isolation, team creation and invitation acceptance passed");
+    console.info("Browser: profile isolation, team creation/invitation and cancellation with slot release passed");
     const page = await observer.newPage(), otherPage = await editor.newPage();
     console.info("Browser: opening observer after real TOTP login");
     await page.goto(`${base}/cabinet/registrations`, { waitUntil: "domcontentloaded", timeout: 60000 });

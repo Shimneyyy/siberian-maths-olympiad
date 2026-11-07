@@ -58,6 +58,7 @@ export function AnnualRegistration({ view, enabled }: { view: View; enabled: boo
         <p className="text-sm text-slate-600">Регистрация: {date(p.registeredAt)} (Новосибирск)</p>
         {p.status === "REGISTERED" && view.editions.some(e => e.id === p.editionId && ["OPEN", "UPCOMING"].includes(e.state)) && <Link href={`/cabinet/correction?editionId=${p.editionId}&participationId=${p.id}`} className="block text-primary">Исправить сведения заявки</Link>}
 
+        {p.status === "REGISTERED" && view.editions.some(e => e.id === p.editionId && ["OPEN", "UPCOMING"].includes(e.state)) && <Link href={`/cabinet/cancel?editionId=${p.editionId}&participationId=${p.id}`} className="block text-primary">Отменить участие</Link>}
         <a href="https://nsuhw.ru" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="inline-block pt-2 text-primary">Перейти на nsuhw.ru ↗</a>
       </article>)}
     </section>

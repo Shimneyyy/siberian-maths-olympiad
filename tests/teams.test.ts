@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { hashPassword } from "better-auth/crypto";
 import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { before, beforeEach, after, test } from "node:test";
@@ -26,7 +27,10 @@ async function fixture() {
       participations.push(await tx.participation.create({ data: { userId: user.id, editionId: i === 8 ? next.id : edition.id, format: "REMOTE", remoteZone: "NSK", fullName: user.name, universityId: university.id, universityName: university.name, universityAbbreviation: university.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consent.id } }));
     }
     const staff = await tx.user.create({ data: { name: "Учебный организатор команды", email: `${randomUUID()}@example.test`, emailVerified: true, role: "VENUE_ORGANIZER", twoFactorEnabled: true } });
-    return { uni, otherUni, course, edition, next, users, participations, staff };
+    const chief = await tx.user.create({ data: { name: "Учебный главный отмены", email: `${randomUUID()}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER", twoFactorEnabled: true } });
+    await tx.account.create({ data: { userId: chief.id, accountId: chief.id, providerId: "credential", password: await hashPassword("Synthetic-cancellation-password") } });
+    await tx.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
+    return { uni, otherUni, course, edition, next, users, participations, staff, chief };
   }, { timeout: 15000 });
 }
 let f: Awaited<ReturnType<typeof fixture>>;
@@ -34,15 +38,17 @@ before(async () => { f = await fixture(); });
 beforeEach(async () => {
   await db.rateLimit.deleteMany({ where: { key: { in: f.users.map(u => `team-invite:${u.id}`) } } });
   await db.team.deleteMany({ where: { editionId: { in: [f.edition.id, f.next.id] } } });
+  await db.participation.updateMany({ where: { editionId: { in: [f.edition.id, f.next.id] } }, data: { status: "REGISTERED", revision: 0 } });
   await db.olympiadEdition.updateMany({ where: { id: { in: [f.edition.id, f.next.id] } }, data: { registrationManuallyClosed: false } });
 });
 after(async () => {
   if (f) {
-    const editions = [f.edition.id, f.next.id], users = [...f.users.map(u => u.id), f.staff.id];
-    await db.rateLimit.deleteMany({ where: { key: { in: users.map(id => `team-invite:${id}`) } } });
+    const editions = [f.edition.id, f.next.id], users = [...f.users.map(u => u.id), f.staff.id, f.chief.id];
+    await db.rateLimit.deleteMany({ where: { key: { in: users.flatMap(id => [`team-invite:${id}`, `correction-reauth:${id}`]) } } });
     await db.team.deleteMany({ where: { editionId: { in: editions } } });
     await db.participation.deleteMany({ where: { editionId: { in: editions } } });
     await db.auditEvent.deleteMany({ where: { OR: [{ editionId: { in: editions } }, { actorId: { in: users } }] } });
+    await db.editionStaffGrant.deleteMany({ where: { editionId: { in: editions } } });
     await db.olympiadEdition.deleteMany({ where: { id: { in: editions } } });
     await db.studentProfile.deleteMany({ where: { userId: { in: users } } });
     await db.consentRecord.deleteMany({ where: { userId: { in: users } } });
@@ -170,4 +176,63 @@ test("SQL rejects foreign year/university membership and invitations and fourth 
   await assert.rejects(db.teamInvitation.create({ data: { teamId: team.id, editionId: f.edition.id, targetParticipationId: f.participations[8].id } }));
   await assert.rejects(db.captainTransfer.create({ data: { teamId: team.id, editionId: f.edition.id, universityId: f.uni.id, targetParticipationId: f.participations[9].id } }));
   await assert.rejects(db.team.create({ data: { editionId: f.edition.id, universityId: f.uni.id, captainParticipationId: f.participations[1].id, slot: 4, name: "Недопустимая команда", coachName: "Учебный тренер" } }));
+});
+
+test("cancellation frees membership, preserves annual history and cannot be restored by registration POST", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const { cancelParticipation } = await import("../src/lib/cancellation");
+  const { registerParticipation } = await import("../src/lib/olympiad");
+  const team = await createTeam(db, f.users[0].id, input());
+  await teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[1].email });
+  const invite = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await teamAction(db, f.users[1].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: invite.id, revision: invite.revision });
+  const data = { editionId: f.edition.id, participationId: f.participations[1].id, revision: 0, confirmed: true };
+  await assert.rejects(cancelParticipation(db, f.users[2].id, data), AccessDenied);
+  await assert.rejects(cancelParticipation(db, f.staff.id, data), AccessDenied);
+  await assert.rejects(cancelParticipation(db, f.users[1].id, { ...data, userId: f.users[0].id }));
+  await assert.rejects(cancelParticipation(db, f.users[1].id, { ...data, confirmed: false }));
+  await cancelParticipation(db, f.users[1].id, data);
+  const p = await db.participation.findUniqueOrThrow({ where: { id: data.participationId } });
+  assert.equal(p.status, "CANCELLED"); assert.equal(p.fullName, f.participations[1].fullName); assert.equal(p.revision, 1);
+  assert.equal(await db.teamMember.count({ where: { teamId: team.id } }), 1);
+  assert.equal(await db.user.count({ where: { id: f.users[1].id } }), 1);
+  await assert.rejects(cancelParticipation(db, f.users[1].id, data), /Восстановление недоступно/);
+  await assert.rejects(registerParticipation(db, f.users[1].id, { editionId: f.edition.id, format: "REMOTE", remoteZone: "NSK", fullName: f.users[1].name, universityId: f.uni.id, courseId: f.course.id }), /Повторный запрос не меняет/);
+});
+
+test("captain cancellation atomically dissolves only that team and leaves the other registrations active", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const { cancelParticipation } = await import("../src/lib/cancellation");
+  const team = await createTeam(db, f.users[0].id, input()), other = await createTeam(db, f.users[2].id, input());
+  await teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: f.users[1].email });
+  const invitation = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await teamAction(db, f.users[1].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: invitation.id, revision: invitation.revision });
+  await cancelParticipation(db, f.users[0].id, { editionId: f.edition.id, participationId: f.participations[0].id, revision: 0, confirmed: true });
+  assert.equal(await db.team.findUnique({ where: { id: team.id } }), null);
+  assert.equal(await db.teamMember.count({ where: { teamId: team.id } }), 0);
+  assert.equal((await db.participation.findUniqueOrThrow({ where: { id: f.participations[1].id } })).status, "REGISTERED");
+  assert.ok(await db.team.findUnique({ where: { id: other.id } }));
+  await createTeam(db, f.users[1].id, input());
+  const audit = await db.auditEvent.findFirstOrThrow({ where: { objectId: team.id, action: "TEAM_DISSOLVED_CAPTAIN_CANCELLED" } });
+  assert.ok(!JSON.stringify(audit).includes(f.users[1].name));
+});
+
+test("manual closure blocks student cancellation; assigned chief needs MFA, reason and password afterwards", async () => {
+  const { cancelParticipation } = await import("../src/lib/cancellation");
+  const data = { editionId: f.edition.id, participationId: f.participations[0].id, revision: 0, confirmed: true };
+  const chief = { ...data, reason: "Учебная причина отмены", password: "Synthetic-cancellation-password" };
+  await assert.rejects(cancelParticipation(db, f.chief.id, chief), AccessDenied);
+  await db.olympiadEdition.update({ where: { id: f.edition.id }, data: { registrationManuallyClosed: true } });
+  await assert.rejects(cancelParticipation(db, f.users[0].id, data), AccessDenied);
+  await assert.rejects(cancelParticipation(db, f.chief.id, data), AccessDenied);
+  await assert.rejects(cancelParticipation(db, f.chief.id, { ...chief, password: "wrong" }), AccessDenied);
+  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: false } });
+  try { await assert.rejects(cancelParticipation(db, f.chief.id, chief), AccessDenied); }
+  finally { await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: true } }); }
+  await cancelParticipation(db, f.chief.id, chief);
+  assert.equal((await db.participation.findUniqueOrThrow({ where: { id: data.participationId } })).status, "CANCELLED");
+  const audit = await db.auditEvent.findFirstOrThrow({ where: { actorId: f.chief.id, objectId: data.participationId, action: "PARTICIPATION_CANCELLED" } });
+  assert.ok(!JSON.stringify(audit).includes(chief.reason)); assert.ok(!JSON.stringify(audit).includes(chief.password));
+  const reasonId = (audit.details as { correctionId: string }).correctionId;
+  assert.equal((await db.participationCorrection.findUniqueOrThrow({ where: { id: reasonId } })).reason, chief.reason);
 });

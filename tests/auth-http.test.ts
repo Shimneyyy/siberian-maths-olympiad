@@ -344,6 +344,15 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     const inbox = (await (await request("/api/teams")).json() as { invitations: { id: string; revision: number }[] }[])[0].invitations[0];
     assert.equal((await request("/api/teams/action", { operation: "acceptInvitation", editionId: edition.id, invitationId: inbox.id, revision: inbox.revision })).status, 200);
     assert.equal((await request("/cabinet/teams")).status, 200);
+    const invitedParticipation = await db.participation.findUniqueOrThrow({ where: { userId_editionId: { userId: invited.id, editionId: edition.id } } });
+    assert.equal((await request(`/cabinet/cancel?editionId=${edition.id}&participationId=${invitedParticipation.id}`)).status, 200);
+    const cancelInput = { editionId: edition.id, participationId: invitedParticipation.id, revision: invitedParticipation.revision, confirmed: true };
+    assert.equal((await request("/api/participations/cancel", { ...cancelInput, confirmed: false })).status, 400);
+    assert.equal((await request("/api/participations/cancel", cancelInput, false)).status, 401);
+    assert.equal((await request("/api/participations/cancel", cancelInput, true, "http://untrusted.test")).status, 403);
+    assert.equal((await request("/api/participations/cancel", cancelInput)).status, 200);
+    assert.equal((await request("/api/participations", { editionId: edition.id, format: "REMOTE", remoteZone: "NSK", fullName: invited.name, universityId: university.id, courseId: course.id })).status, 409);
+    assert.equal(await db.teamMember.count({ where: { participationId: invitedParticipation.id } }), 0);
     cookies.clear(); for (const [k, v] of savedStaffCookies) cookies.set(k, v);
 
     assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: chief.email, name: chief.name, operation: "assign", password })).status, 403);
@@ -353,6 +362,7 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     cookies.clear(); for (const [k, v] of adminCookies) cookies.set(k, v);
     assert.equal((await request("/cabinet/registrations")).status, 307);
     assert.equal((await request("/api/registrations/export", rosterQuery)).status, 403);
+    assert.equal((await request("/api/participations/cancel", { editionId: edition.id, participationId: firstData.id, revision: 1, confirmed: true })).status, 403);
     assert.equal((await request("/api/admin/chief", { editionId: next.id, email: chief.email, name: chief.name, operation: "assign", password })).status, 200);
     await db.rateLimit.deleteMany({ where: { key: `admin-reauth:${admin.id}` } });
     assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: a.email, name: a.name, operation: "assign", password })).status, 403, "Existing student cannot be promoted");

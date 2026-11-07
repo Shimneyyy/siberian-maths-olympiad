@@ -46,11 +46,11 @@ export async function saveProfile(db: PrismaClient, actorId: string, raw: unknow
     return { status: "ok" };
   });
 }
-async function editable(tx: PrismaClient | Tx, actorId: string, editionId: string, participationId: string, now: Date) {
+export async function editableParticipation(tx: PrismaClient | Tx, actorId: string, editionId: string, participationId: string, now: Date, requireRegistered = true) {
   const actor = await tx.user.findUnique({ where: { id: actorId } });
   if (!actor?.emailVerified) throw new AccessDenied("FORBIDDEN");
   const p = await tx.participation.findFirst({ where: { id: participationId, editionId }, include: { edition: true, user: { select: { email: true } } } });
-  if (!p || p.status !== "REGISTERED") throw new AccessDenied("FORBIDDEN");
+  if (!p || (requireRegistered && p.status !== "REGISTERED")) throw new AccessDenied("FORBIDDEN");
   const closed = p.edition.registrationManuallyClosed || (!!p.edition.registrationClosesAt && now >= p.edition.registrationClosesAt);
   if (actor.role === "STUDENT") {
     if (p.userId !== actorId || closed || !p.edition.registrationClosesAt) throw new AccessDenied("FORBIDDEN");
@@ -61,11 +61,11 @@ async function editable(tx: PrismaClient | Tx, actorId: string, editionId: strin
 }
 export async function correctionView(db: PrismaClient, actorId: string, editionId: string, participationId: string) {
   z.uuid().parse(editionId); z.uuid().parse(participationId);
-  const { p, actor } = await editable(db, actorId, editionId, participationId, new Date());
+  const { p, actor } = await editableParticipation(db, actorId, editionId, participationId, new Date());
   return { fullName: p.fullName, universityId: p.universityId, courseId: p.courseId, revision: p.revision,
     editionId, participationId, chief: actor.role === "CHIEF_ORGANIZER", ...await catalogs(db, p.universityId, p.courseId) };
 }
-async function chiefReauthentication(db: PrismaClient, actorId: string, password: string) {
+export async function reauthenticateParticipationChief(db: PrismaClient, actorId: string, password: string) {
   const key = `correction-reauth:${actorId}`, now = BigInt(Date.now()), threshold = now - 60000n;
   const [bucket] = await db.$queryRaw<{ count: number }[]>`INSERT INTO "RateLimit" ("id","key","count","lastRequest") VALUES (${randomUUID()}::uuid,${key},1,${now})
     ON CONFLICT ("key") DO UPDATE SET "count" = CASE WHEN "RateLimit"."lastRequest" < ${threshold} THEN 1 ELSE "RateLimit"."count" + 1 END,
@@ -79,15 +79,15 @@ async function chiefReauthentication(db: PrismaClient, actorId: string, password
 }
 export async function correctParticipation(db: PrismaClient, actorId: string, raw: unknown, clock: () => Date = () => new Date()) {
   const input = editSchema.parse(raw);
-  const { actor } = await editable(db, actorId, input.editionId, input.participationId, clock());
+  const { actor } = await editableParticipation(db, actorId, input.editionId, input.participationId, clock());
   if (actor.role === "CHIEF_ORGANIZER") {
     if (!input.reason || !input.password) throw new AccessDenied("FORBIDDEN");
-    await chiefReauthentication(db, actorId, input.password);
+    await reauthenticateParticipationChief(db, actorId, input.password);
   } else if (input.reason || input.password) throw new AccessDenied("FORBIDDEN");
   return db.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "OlympiadEdition" WHERE "id" = ${input.editionId}::uuid FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "Participation" WHERE "id" = ${input.participationId}::uuid FOR UPDATE`;
-    const { p, actor } = await editable(tx, actorId, input.editionId, input.participationId, clock());
+    const { p, actor } = await editableParticipation(tx, actorId, input.editionId, input.participationId, clock());
     assertDemoRegistration(p.user.email);
     if (p.revision !== input.revision) throw new OlympiadError("CONFLICT", "Регистрация уже изменена. Обновите страницу.");
     if (input.universityId !== p.universityId && await tx.teamMember.findUnique({ where: { participationId: p.id } })) throw new OlympiadError("CONFLICT", "Сначала выйдите из команды, затем меняйте вуз в заявке");
