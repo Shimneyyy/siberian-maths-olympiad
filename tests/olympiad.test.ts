@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
-import { saveRegistrationWindow } from "../src/lib/admin";
+import { AdminRateLimit, saveRegistrationWindow } from "../src/lib/admin";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { randomUUID, createHash } from "node:crypto";
@@ -61,6 +61,7 @@ async function clean(f: Fixture) {
     await tx.olympiadEdition.deleteMany({ where: { id: { in: years } } });
     await tx.studentProfile.deleteMany({ where: { userId: { in: users } } });
     await tx.consentRecord.deleteMany({ where: { userId: { in: users } } });
+    await tx.rateLimit.deleteMany({ where: { key: { in: users.flatMap(id => [`admin-reauth:${id}`, `correction-reauth:${id}`]) } } });
     await tx.user.deleteMany({ where: { id: { in: users } } });
     await tx.courseOption.deleteMany({ where: { id: { in: [f.course.id, f.nextCourse.id] } } });
     await tx.university.delete({ where: { id: f.university.id } });
@@ -184,4 +185,60 @@ test("edition provisioning CLI is repeatable and does not overwrite schedules or
     const e = await db.olympiadEdition.findUnique({ where: { year } });
     if (e) { await db.auditEvent.deleteMany({ where: { editionId: e.id } }); await db.olympiadEdition.delete({ where: { id: e.id } }); }
   }
+});
+
+test("current profile edits cannot alter annual snapshots, email or role and reject stale versions", async () => {
+  const { profileView, saveProfile } = await import("../src/lib/corrections");
+  const f = await fixture(6414);
+  try {
+    await registerParticipation(db, f.a.id, registration(f), () => opens);
+    const before = await db.participation.findUniqueOrThrow({ where: { userId_editionId: { userId: f.a.id, editionId: f.first.id } } });
+    const profile = await profileView(db, f.a.id);
+    const input = { fullName: "Изменённый учебный профиль", universityId: profile.universityId, courseId: f.nextCourse.id, revision: profile.revision };
+    await assert.rejects(saveProfile(db, f.chief.id, input), AccessDenied);
+    await assert.rejects(saveProfile(db, f.a.id, { ...input, role: "TECHNICAL_ADMIN" }));
+    await assert.rejects(saveProfile(db, f.a.id, { ...input, userId: f.b.id }));
+    await saveProfile(db, f.a.id, input);
+    assert.deepEqual(await db.participation.findUniqueOrThrow({ where: { id: before.id } }), before);
+    const actor = await db.user.findUniqueOrThrow({ where: { id: f.a.id } });
+    assert.equal(actor.name, input.fullName); assert.equal(actor.role, "STUDENT"); assert.equal(actor.email, f.a.email);
+    await assert.rejects(saveProfile(db, f.a.id, input), hasCode("CONFLICT"));
+  } finally { await clean(f); }
+});
+
+test("annual correction enforces deadline/manual close, owner, chief reason/password and preserves other years", async () => {
+  const { correctParticipation, correctionView } = await import("../src/lib/corrections");
+  const f = await fixture(6416);
+  const password = "Synthetic-correction-password";
+  try {
+    const first = await registerParticipation(db, f.a.id, registration(f), () => opens);
+    const next = await registerParticipation(db, f.a.id, { ...registration(f), editionId: f.next.id, editionVenueId: f.nextSite.id }, () => opens);
+    const input = { editionId: f.first.id, participationId: first.id, revision: 0, fullName: "Исправленное учебное имя", universityId: f.university.id, courseId: f.nextCourse.id };
+    await db.account.create({ data: { userId: f.chief.id, accountId: f.chief.id, providerId: "credential", password: await hashPassword(password) } });
+    for (const actor of [f.b, f.staff, f.admin]) await assert.rejects(correctParticipation(db, actor.id, input, () => opens), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, reason: "Учебная ошибка", password }, () => opens), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.a.id, { ...input, editionVenueId: f.otherSite.id }, () => opens));
+    const competing = await Promise.allSettled([correctParticipation(db, f.a.id, input, () => opens), correctParticipation(db, f.a.id, input, () => opens)]);
+    assert.equal(competing.filter(x => x.status === "fulfilled").length, 1);
+    assert.equal((competing.find(x => x.status === "rejected") as PromiseRejectedResult).reason.code, "CONFLICT");
+    assert.deepEqual(await db.participation.findUniqueOrThrow({ where: { id: next.id } }), next);
+    const changed = await db.participation.findUniqueOrThrow({ where: { id: first.id } });
+    assert.equal(changed.fullName, input.fullName); assert.equal(changed.courseLabel, f.nextCourse.label); assert.equal(changed.editionVenueId, first.editionVenueId);
+    await assert.rejects(correctParticipation(db, f.a.id, { ...input, revision: 1 }, () => closes), AccessDenied);
+    await db.olympiadEdition.update({ where: { id: f.first.id }, data: { registrationManuallyClosed: true } });
+    await assert.rejects(correctionView(db, f.a.id, f.first.id, first.id), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.a.id, { ...input, revision: 1 }, () => opens), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 1 }, () => opens), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 1, reason: "Учебная ошибка", password: "wrong" }, () => opens), AccessDenied);
+    const profileBefore = await db.studentProfile.findUniqueOrThrow({ where: { userId: f.a.id } });
+    await correctParticipation(db, f.chief.id, { ...input, revision: 1, fullName: "Учебная правка организатора", reason: "Учебная причина", password }, () => opens);
+    assert.deepEqual(await db.studentProfile.findUniqueOrThrow({ where: { userId: f.a.id } }), profileBefore);
+    assert.deepEqual(await db.participation.findUniqueOrThrow({ where: { id: next.id } }), next);
+    assert.equal(await db.participationCorrection.count({ where: { participationId: first.id } }), 1);
+    const audit = await db.auditEvent.findMany({ where: { action: "PARTICIPATION_CORRECTED", editionId: f.first.id } });
+    assert.equal(audit.length, 2); assert.ok(!JSON.stringify(audit).includes("Учебная причина")); assert.ok(!JSON.stringify(audit).includes(input.fullName));
+    for (let i=0;i<3;i++) await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 2, reason: "Учебная ошибка", password: "wrong" }, () => opens), AccessDenied);
+    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 2, reason: "Учебная ошибка", password }, () => opens), AdminRateLimit);
+
+  } finally { await clean(f); }
 });

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -55,6 +56,8 @@ export function AnnualRegistration({ view, enabled }: { view: View; enabled: boo
         <p>{p.status === "REGISTERED" ? "Зарегистрирован" : "Участие отменено"} · {p.format === "ONSITE" ? "Очно" : `Дистанционно · ${p.remoteZone === "MSK" ? "МСК UTC+3" : "НСК UTC+7"}`}</p>
         {p.venue && <><p>{p.venue.label} · {p.venue.address}{p.venue.room && ` · ${p.venue.room}`}</p>{p.venue.instructions && <p className="whitespace-pre-wrap text-sm">{p.venue.instructions}</p>}{!p.venue.active && <p className="text-sm">Площадка закрыта для новых регистраций. Ваша запись сохранена.</p>}</>}
         <p className="text-sm text-slate-600">Регистрация: {date(p.registeredAt)} (Новосибирск)</p>
+        {p.status === "REGISTERED" && view.editions.some(e => e.id === p.editionId && ["OPEN", "UPCOMING"].includes(e.state)) && <Link href={`/cabinet/correction?editionId=${p.editionId}&participationId=${p.id}`} className="block text-primary">Исправить сведения заявки</Link>}
+
         <a href="https://nsuhw.ru" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="inline-block pt-2 text-primary">Перейти на nsuhw.ru ↗</a>
       </article>)}
     </section>

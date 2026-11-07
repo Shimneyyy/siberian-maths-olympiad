@@ -101,7 +101,7 @@ export async function registerParticipation(db: PrismaClient, actorId: string, r
       const site = await tx.editionVenue.findFirst({ where: { id: input.editionVenueId, editionId: input.editionId, active: true } });
       if (!site) throw new OlympiadError("INVALID_VENUE", "Выбранная площадка не принимает регистрации этого выпуска");
     }
-    await tx.studentProfile.update({ where: { userId: actorId }, data: { fullName: input.fullName, universityId: university.id, courseId: course.id } });
+    await tx.studentProfile.update({ where: { userId: actorId }, data: { fullName: input.fullName, universityId: university.id, courseId: course.id, revision: { increment: 1 } } });
     await tx.user.update({ where: { id: actorId }, data: { name: input.fullName } });
     const participation = await tx.participation.create({ data: {
       userId: actorId, editionId: input.editionId, format: input.format,

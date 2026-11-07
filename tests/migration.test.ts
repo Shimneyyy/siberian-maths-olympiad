@@ -25,7 +25,9 @@ test("R03 migration preserves old users, grants and annual history and enforces 
     await db.query('INSERT INTO "Participation" (id,"userId","editionId",format,"remoteZone","fullName","universityId","universityName","universityAbbreviation","courseId","courseLabel","consentId") VALUES ($1,$2,$3,\'REMOTE\',\'NSK\',$4,$5,$6,$7,$8,$9,$10)', [participation, student, edition, "Учебный участник", university, "Учебный вуз", "УВ", course, "Учебный курс", consent]);
     const snapshot = async () => {
       const rows = [];
-      for (const table of ["User", "EditionStaffGrant", "Participation"]) rows.push((await db.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows);
+      for (const table of ["User", "EditionStaffGrant", "Participation"]) rows.push((await db.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows.map(row => {
+        const result = { ...row }; if (table === "Participation") delete result.revision; return result;
+      }));
       return rows;
     };
     const before = await snapshot();

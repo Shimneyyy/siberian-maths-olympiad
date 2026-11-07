@@ -246,6 +246,15 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal(first.status, 200);
     const firstData = await first.json() as { id: string };
     assert.equal((await (await request("/api/participations", input)).json() as { id: string }).id, firstData.id);
+    const currentProfile = await (await request("/api/profile")).json() as { revision: number };
+    const profileInput = { fullName: "Учебный профиль HTTP", universityId: university.id, courseId: course.id, revision: currentProfile.revision };
+    assert.equal((await request("/api/profile", { ...profileInput, role: "TECHNICAL_ADMIN" }, true, origin, "PATCH")).status, 400);
+    assert.equal((await request("/api/profile", profileInput, true, origin, "PATCH")).status, 200);
+    assert.equal((await db.participation.findUniqueOrThrow({ where: { id: firstData.id } })).fullName, a.name);
+    assert.equal((await request("/api/participations/correction", { editionId: edition.id, participationId: firstData.id, revision: 0, fullName: a.name, universityId: university.id, courseId: course.id }, true, origin, "PATCH")).status, 200);
+    assert.equal((await request("/cabinet/profile")).status, 200);
+    assert.equal((await request(`/cabinet/correction?editionId=${edition.id}&participationId=${firstData.id}`)).status, 200);
+
     assert.equal((await request("/api/participations", { ...input, editionId: next.id })).status, 409, "Cannot submit a venue from another edition");
     assert.equal((await request("/api/participations", { editionId: next.id, format: "REMOTE", remoteZone: "NSK", fullName: "Обновлённый учебный участник HTTP", universityId: university.id, courseId: nextCourse.id })).status, 200);
     const consentB = await db.consentRecord.findFirstOrThrow({ where: { userId: b.id } });

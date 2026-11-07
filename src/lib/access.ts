@@ -1,5 +1,5 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
-export type StaffAction = "edition:manage" | "venues:manage" | "registrations:read" | "attendance:write" | "results:publish" | "diplomas:publish" | "staff:manage";
+export type StaffAction = "edition:manage" | "venues:manage" | "registrations:read" | "registrations:edit" | "attendance:write" | "results:publish" | "diplomas:publish" | "staff:manage";
 export class AccessDenied extends Error {
   constructor(public readonly reason: "FORBIDDEN" | "MFA_REQUIRED") { super(reason); }
 }
