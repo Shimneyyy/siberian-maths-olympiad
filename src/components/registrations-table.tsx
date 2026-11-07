@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import type { registrationsOptions, listRegistrations, RegistrationsQuery } from "@/lib/registrations";
 type Options = Awaited<ReturnType<typeof registrationsOptions>>;
@@ -13,8 +13,37 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const requestId = useRef(0);
+  const appliedQuery = useRef<RegistrationsQuery | null>(initial ? filters : null);
+  useEffect(() => {
+    if (busy) return;
+    let pending = false, disposed = false;
+    const controller = new AbortController();
+    async function refresh() {
+      const query = appliedQuery.current;
+      if (!query || pending) return;
+      pending = true;
+      const current = ++requestId.current;
+      try {
+        const response = await fetch("/api/registrations/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query), cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]) });
+        const result = await response.json();
+        if (disposed || current !== requestId.current) return;
+        if (!response.ok) {
+          setData(null); setFacets({ universityNames: [], courseLabels: [] });
+          setMessage(result.error || "Не удалось обновить список");
+          if ([401,403].includes(response.status)) appliedQuery.current = null;
+          return;
+        }
+        setData(result as Result); setFacets((result as Result).filters); setMessage("");
+      } catch {
+        if (!disposed && current === requestId.current) { setData(null); setMessage("Связь потеряна. Повторное подключение выполняется автоматически."); }
+      } finally { pending = false; }
+    }
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => { disposed = true; clearInterval(timer); controller.abort(); };
+  }, [busy]);
   const selectedEdition = options.editions.find((e) => e.id === filters.editionId);
   function change(patch: Partial<RegistrationsQuery>) {
+    appliedQuery.current = null;
     requestId.current++; setBusy(false); setMessage("");
     if ("editionId" in patch || "editionVenueId" in patch) setFacets({ universityNames: [], courseLabels: [] });
     setFilters((old) => ({ ...old, ...patch, page: 1 }));
@@ -30,6 +59,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
       const result = await response.json();
       if (requestId.current !== current) return;
       if (!response.ok) { if (response.status === 401 || response.status === 403) setFacets({ universityNames: [], courseLabels: [] }); setMessage(result.error || "Не удалось получить список."); return; }
+      appliedQuery.current = { ...query, page: (result as Result).page };
       setFacets((result as Result).filters); setData(result as Result); setFilters({ ...query, page: (result as Result).page });
     } catch { if (requestId.current === current) setMessage("Не удалось получить список. Повторите запрос."); }
     finally { if (requestId.current === current) setBusy(false); }
@@ -64,6 +94,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
   if (!options.editions.length) return <p>У вас нет действующих назначений на годы или площадки олимпиады.</p>;
   return <div className="space-y-6">
     <p className="text-sm text-slate-600">{options.canSeeRemote ? "Список участников доступных вам годов, включая дистанционное участие." : "Список ограничен назначенными вам площадками. Отключённые площадки сохраняют ранее зарегистрированных участников."}</p>
+    <p className="text-sm text-slate-600">Применённый список обновляется каждые 5 секунд. При потере связи данные скрываются и подключение повторяется.</p>
     <form className="rounded-xl border border-border bg-white p-5" onSubmit={(event) => { event.preventDefault(); void load(filters); }}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label>Год олимпиады<select value={filters.editionId} onChange={(event) => change({ editionId: event.target.value, editionVenueId: undefined, universityName: undefined, courseLabel: undefined })} className={field}>{options.editions.map((e) => <option key={e.id} value={e.id}>{e.year} · {e.title}</option>)}</select></label>

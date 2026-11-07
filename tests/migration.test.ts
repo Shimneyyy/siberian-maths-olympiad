@@ -23,7 +23,11 @@ test("R03 migration preserves old users, grants and annual history and enforces 
     await db.query('INSERT INTO "CourseOption" (id,label) VALUES ($1,$2)', [course, "Учебный курс"]);
     await db.query('INSERT INTO "ConsentRecord" (id,"userId",purpose,"textVersion","textHash") VALUES ($1,$2,$3,$4,$5)', [consent, student, "synthetic-demo-only", "demo", "a".repeat(64)]);
     await db.query('INSERT INTO "Participation" (id,"userId","editionId",format,"remoteZone","fullName","universityId","universityName","universityAbbreviation","courseId","courseLabel","consentId") VALUES ($1,$2,$3,\'REMOTE\',\'NSK\',$4,$5,$6,$7,$8,$9,$10)', [participation, student, edition, "Учебный участник", university, "Учебный вуз", "УВ", course, "Учебный курс", consent]);
-    const snapshot = async () => Promise.all(["User", "EditionStaffGrant", "Participation"].map(async table => (await db.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows));
+    const snapshot = async () => {
+      const rows = [];
+      for (const table of ["User", "EditionStaffGrant", "Participation"]) rows.push((await db.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows);
+      return rows;
+    };
     const before = await snapshot();
     for (const migration of migrations.filter(x => x >= "20261107080000")) await db.query(await readFile(`prisma/migrations/${migration}/migration.sql`, "utf8"));
     assert.deepEqual(await snapshot(), before);

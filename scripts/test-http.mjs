@@ -1,11 +1,18 @@
 import "dotenv/config";
+import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
 import { setTimeout } from "node:timers/promises";
+const target = process.argv[2] || "tests/auth-http.test.ts";
+if (!["tests/auth-http.test.ts", "tests/live.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
 const port = 3100;
 const base = `http://localhost:${port}`;
 if (!process.env.BETTER_AUTH_SECRET) throw new Error("Configure BETTER_AUTH_SECRET before HTTP tests");
 const env = { ...process.env, NODE_ENV: "development", DEMO_REGISTRATION: "true", BETTER_AUTH_URL: base, TEST_BASE_URL: base, NEXT_TELEMETRY_DISABLED: "1" };
-const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: ["ignore", "ignore", "pipe"] });
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: ["ignore", process.env.TEST_SERVER_LOG ? "pipe" : "ignore", "pipe"] });
+if (process.env.TEST_SERVER_LOG) {
+  const log = createWriteStream(process.env.TEST_SERVER_LOG);
+  server.stdout?.pipe(log); server.stderr.pipe(log);
+}
 server.stderr.on("data", () => { /* No server logs containing request URLs in test output. */ });
 try {
   let ready = false;
@@ -18,7 +25,7 @@ try {
     await setTimeout(500);
   }
   if (!ready) throw new Error("HTTP test server/database failed readiness");
-  const run = spawn(process.execPath, ["--import", "tsx", "--test", "tests/auth-http.test.ts"], { env, stdio: "inherit" });
+  const run = spawn(process.execPath, ["--import", "tsx", "--test", target], { env, stdio: "inherit" });
   process.exitCode = await new Promise((resolve) => { run.on("exit", (code) => resolve(code ?? 1)); run.on("error", () => resolve(1)); });
 } finally {
   server.kill("SIGTERM");
