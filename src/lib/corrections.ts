@@ -90,6 +90,7 @@ export async function correctParticipation(db: PrismaClient, actorId: string, ra
     const { p, actor } = await editable(tx, actorId, input.editionId, input.participationId, clock());
     assertDemoRegistration(p.user.email);
     if (p.revision !== input.revision) throw new OlympiadError("CONFLICT", "Регистрация уже изменена. Обновите страницу.");
+    if (input.universityId !== p.universityId && await tx.teamMember.findUnique({ where: { participationId: p.id } })) throw new OlympiadError("CONFLICT", "Сначала выйдите из команды, затем меняйте вуз в заявке");
     const { university, course } = await references(tx, input, p);
     await tx.participation.update({ where: { id: p.id }, data: { fullName: input.fullName, universityId: input.universityId, courseId: input.courseId,
       ...(input.universityId !== p.universityId ? { universityName: university.name, universityAbbreviation: university.abbreviation } : {}),

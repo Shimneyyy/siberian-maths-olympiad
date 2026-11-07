@@ -253,6 +253,12 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await db.participation.findUniqueOrThrow({ where: { id: firstData.id } })).fullName, a.name);
     assert.equal((await request("/api/participations/correction", { editionId: edition.id, participationId: firstData.id, revision: 0, fullName: a.name, universityId: university.id, courseId: course.id }, true, origin, "PATCH")).status, 200);
     assert.equal((await request("/cabinet/profile")).status, 200);
+    assert.equal((await request("/api/teams", { editionId: edition.id, coachName: "Учебный тренер", captainId: b.id })).status, 400);
+    assert.equal((await request("/api/teams", { editionId: edition.id, coachName: "Учебный тренер" })).status, 200);
+    const teamView = await (await request("/api/teams")).json() as { team: { name: string } | null }[];
+    assert.equal(teamView.find(t => t.team)?.team?.name, "УЧ-1");
+    assert.equal((await request("/cabinet/teams")).status, 200);
+
     assert.equal((await request(`/cabinet/correction?editionId=${edition.id}&participationId=${firstData.id}`)).status, 200);
 
     assert.equal((await request("/api/participations", { ...input, editionId: next.id })).status, 409, "Cannot submit a venue from another edition");
@@ -342,6 +348,7 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
   } finally {
     await db.$transaction(async (tx) => {
       const sites = await tx.editionVenue.findMany({ where: { editionId: { in: editions } }, select: { venueId: true } });
+      await tx.team.deleteMany({ where: { editionId: { in: editions } } });
       await tx.participation.deleteMany({ where: { editionId: { in: editions } } });
       await tx.auditEvent.deleteMany({ where: { OR: [{ actorId: { in: users } }, { editionId: { in: editions } }] } });
       await tx.venueStaffAssignment.deleteMany({ where: { editionId: { in: editions } } });

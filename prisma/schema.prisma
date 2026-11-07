@@ -36,6 +36,7 @@ model User {
 }
 
 model University {
+  teams Team[]
   id             String           @id @default(uuid()) @db.Uuid
   name           String
   abbreviation   String
@@ -80,6 +81,7 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  teams Team[]
   id                         String                 @id @default(uuid()) @db.Uuid
   year                       Int                    @unique
   title                      String
@@ -240,6 +242,9 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  captainedTeam Team? @relation("TeamCaptain")
+  teamMembership TeamMember?
+  @@unique([id, editionId, universityId])
   revision Int @default(0)
   corrections ParticipationCorrection[]
   attendance Attendance?
@@ -293,4 +298,33 @@ model ParticipationCorrection {
   actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
   reason String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model Team {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  universityId String @db.Uuid
+  university University @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  slot Int
+  name String
+  coachName String
+  captainParticipationId String @unique @db.Uuid
+  @@unique([captainParticipationId, editionId, universityId])
+  captain Participation @relation("TeamCaptain", fields: [captainParticipationId, editionId, universityId], references: [id, editionId, universityId], onDelete: Restrict)
+  members TeamMember[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([editionId, universityId, slot])
+  @@unique([id, editionId, universityId])
+}
+
+model TeamMember {
+  @@unique([participationId, editionId, universityId])
+  participationId String @id @db.Uuid
+  participation Participation @relation(fields: [participationId, editionId, universityId], references: [id, editionId, universityId], onDelete: Cascade)
+  teamId String @db.Uuid
+  team Team @relation(fields: [teamId, editionId, universityId], references: [id, editionId, universityId], onDelete: Cascade)
+  editionId String @db.Uuid
+  universityId String @db.Uuid
+  joinedAt DateTime @default(now()) @db.Timestamptz(3)
 }
