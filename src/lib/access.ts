@@ -15,7 +15,7 @@ export async function authorizeStaff(db: PrismaClient | Prisma.TransactionClient
       const grant = await db.editionStaffGrant.findUnique({ where: { userId_editionId: { userId: actor.id, editionId } } });
       allowed = !!grant && !grant.revokedAt;
       if (allowed && editionVenueId) allowed = !!await db.editionVenue.findFirst({ where: { id: editionVenueId, editionId } });
-    } else if (editionVenueId && (action === "registrations:read" || action === "attendance:write")) {
+    } else if (actor.role === "VENUE_ORGANIZER" && editionVenueId && (action === "registrations:read" || action === "attendance:write")) {
       allowed = !!await db.venueStaffAssignment.findFirst({ where: { userId: actor.id, editionId, editionVenueId, revokedAt: null } });
     }
   }

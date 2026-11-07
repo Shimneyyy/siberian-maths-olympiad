@@ -19,7 +19,7 @@ export function createAuth(database: PrismaClient | Prisma.TransactionClient, se
     trustedOrigins: [new URL(baseURL).origin],
     advanced: { ipAddress: { ipAddressHeaders: [] }, database: { generateId: () => randomUUID() } },
     user: { additionalFields: {
-      role: { type: ["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER"], required: false, defaultValue: "STUDENT", input: false },
+      role: { type: ["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER", "TECHNICAL_ADMIN"], required: false, defaultValue: "STUDENT", input: false },
     } },
     session: { expiresIn: 60 * 60 * 24, updateAge: 60 * 60, cookieCache: { enabled: false } },
     verification: { storeIdentifier: "hashed" },
