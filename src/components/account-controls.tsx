@@ -11,7 +11,7 @@ export function AccountControls({ enabled }: { enabled: boolean }) {
   return <section className="mt-8 space-y-4 rounded-xl border border-border bg-white p-6">
     <h2 className="text-xl font-semibold">Безопасность аккаунта</h2>
     <p>{enabled ? "Двухфакторная аутентификация включена." : "Для работы организатором включите двухфакторную аутентификацию."}</p>
-    {!enabled && !setup && <form className="space-y-3" onSubmit={async (event) => {
+    {!enabled && !setup && <form method="post" className="space-y-3" onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); const form = event.currentTarget;
       try {
         const result = await authClient.twoFactor.enable({ password: String(new FormData(form).get("password")) });
@@ -26,7 +26,7 @@ export function AccountControls({ enabled }: { enabled: boolean }) {
       <p>Добавьте этот адрес в приложение-аутентификатор. Он содержит секрет — никому его не передавайте.</p>
       <code className="block break-all rounded-lg bg-muted p-3 text-sm">{setup.totpURI}</code>
       <p>Сохраните резервные коды в защищённом месте:</p><pre className="rounded-lg bg-muted p-3">{setup.backupCodes.join("\n")}</pre>
-      <form onSubmit={async (event) => {
+      <form method="post" onSubmit={async (event) => {
         event.preventDefault(); setBusy(true);
         try { const result = await authClient.twoFactor.verifyTotp({ code: String(new FormData(event.currentTarget).get("code")), trustDevice: false });
           if (result.error) setMessage("Проверьте код."); else { setSetup(null); router.refresh(); }

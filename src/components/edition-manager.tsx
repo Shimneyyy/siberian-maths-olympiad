@@ -22,7 +22,7 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
   const siteData = (form: FormData) => ({ editionId: edition.id, label: form.get("label"), address: form.get("address"), room: form.get("room"), instructions: form.get("instructions") });
   return <section className="space-y-6 rounded-xl border border-border bg-white p-6">
     <h2 className="text-2xl font-semibold">{edition.title} · {edition.year}{edition.isCurrent && " · Текущая"}</h2>
-    <form className="space-y-4" onSubmit={async (event) => {
+    <form method="post" className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       await send("/api/editions", "PATCH", { editionId: edition.id, revision: edition.revision, title: form.get("title"), registrationOpensAt: edition.opensAt, registrationClosesAt: edition.closesAt, registrationManuallyClosed: edition.registrationManuallyClosed, isCurrent: edition.isCurrent || form.get("current") === "on" });
     }}>
@@ -34,7 +34,7 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
     </form>
     <h3 className="border-t border-border pt-6 text-xl font-semibold">Площадки этого года</h3>
     {!edition.venues.length && <p>Площадки ещё не добавлены.</p>}
-    {edition.venues.map((v) => <form key={`${v.id}-${v.revision}`} className="space-y-3 rounded-lg border border-border p-4" onSubmit={async (event) => {
+    {edition.venues.map((v) => <form method="post" key={`${v.id}-${v.revision}`} className="space-y-3 rounded-lg border border-border p-4" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       await send("/api/venues", "PATCH", { ...siteData(form), editionVenueId: v.id, revision: v.revision, active: form.get("active") === "on" });
     }}>
@@ -46,7 +46,7 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
       <p className="text-sm text-slate-600">Отключение сохранит участников и их выбор площадки. Автоматического переноса нет.</p>
       <Button variant="outline" disabled={busy}>Сохранить площадку</Button>
     </form>)}
-    <details className="rounded-lg border border-border p-4"><summary className="cursor-pointer font-semibold">Добавить новую площадку</summary><form className="mt-4 space-y-3" onSubmit={async (event) => {
+    <details className="rounded-lg border border-border p-4"><summary className="cursor-pointer font-semibold">Добавить новую площадку</summary><form method="post" className="mt-4 space-y-3" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget); const venueId = String(form.get("venueId") || "");
       await send("/api/venues", "POST", { ...siteData(form), ...(venueId ? { venueId } : {}) });
     }}>

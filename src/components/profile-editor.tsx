@@ -1,4 +1,5 @@
 "use client";
+import { useHydrated } from "@/lib/use-hydrated";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -7,9 +8,10 @@ type View = Awaited<ReturnType<typeof profileView>> & { editionId?: string; part
 const field = "mt-2 block w-full rounded border border-border p-3";
 export function ProfileEditor({ view, enabled }: { view: View; enabled: boolean }) {
   const router = useRouter();
+  const hydrated = useHydrated();
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const annual = !!view.participationId;
-  return <form className="space-y-4 rounded border border-border bg-white p-6" onSubmit={async event => {
+  return <form method="post" className="space-y-4 rounded border border-border bg-white p-6" onSubmit={async event => {
     event.preventDefault(); const form = event.currentTarget, data = new FormData(form);
     setBusy(true); setMessage("");
     try {
@@ -30,7 +32,7 @@ export function ProfileEditor({ view, enabled }: { view: View; enabled: boolean 
     <label className="block">Курс<select className={field} name="courseId" defaultValue={view.courseId}>{view.courses.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
     {view.chief && <><label className="block">Причина исправления (без ПДн и секретов)<textarea className={field} name="reason" required minLength={1} maxLength={1000} /></label><label className="block">Текущий пароль<input className={field} name="password" type="password" autoComplete="current-password" required maxLength={128} /></label></>}
     {!enabled && <p>Сохранение доступно только в учебном режиме с синтетическими данными.</p>}
-    <Button disabled={busy || !enabled}>Сохранить сведения</Button>
+    <Button disabled={busy || !enabled || !hydrated}>Сохранить сведения</Button>
     {message && <p role="status">{message}</p>}
   </form>;
 }

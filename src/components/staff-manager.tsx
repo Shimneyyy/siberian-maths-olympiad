@@ -21,7 +21,7 @@ export function StaffManager({ venues, staff }: { venues: Venue[]; staff: Staff[
   return <section className="mt-8 space-y-4 rounded-xl border border-border bg-white p-6">
     <h2 className="text-xl font-semibold">Организаторы площадок</h2>
     <label className="block">Текущий пароль для подтверждения изменений<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 block w-full rounded-lg border border-border p-2" /></label>
-    {!venues.length ? <p>Для назначения нужны площадки вашего года олимпиады.</p> : <form className="space-y-4" onSubmit={async (event) => {
+    {!venues.length ? <p>Для назначения нужны площадки вашего года олимпиады.</p> : <form method="post" className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       const venue = venues.find((x) => x.id === form.get("venue")); if (!venue) return;
       await mutate("POST", { editionId: venue.editionId, editionVenueId: venue.id, email: form.get("email"), name: form.get("name") });

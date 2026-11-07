@@ -130,3 +130,44 @@ test("closed editions freeze pending invitation decisions and teams cannot cross
   const audit = await db.auditEvent.findMany({ where: { objectId: team.id } });
   assert.ok(!JSON.stringify(audit).includes(f.users[1].email));
 });
+
+test("concurrent team creation cannot produce a fourth university team or duplicate captain membership", async () => {
+  const results = await Promise.allSettled(f.users.slice(0,4).map(u => createTeam(db, u.id, input())));
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 3);
+  assert.equal(results.filter(r => r.status === "rejected").length, 1);
+  assert.equal(await db.team.count({ where: { editionId: f.edition.id } }), 3);
+  await db.team.deleteMany({ where: { editionId: f.edition.id } });
+  const repeated = await Promise.allSettled([createTeam(db, f.users[0].id, input()), createTeam(db, f.users[0].id, input())]);
+  assert.equal(repeated.filter(r => r.status === "fulfilled").length, 1);
+  assert.equal(await db.teamMember.count({ where: { participationId: f.participations[0].id } }), 1);
+});
+
+test("parallel invitation acceptance cannot create a sixth member or join two teams", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const team = await createTeam(db, f.users[0].id, input());
+  for (const user of f.users.slice(1,7)) await teamAction(db, f.users[0].id, { operation: "invite", editionId: f.edition.id, teamId: team.id, email: user.email });
+  const results = await Promise.allSettled(f.users.slice(1,7).map(async user => {
+    const invitation = (await teamsView(db, user.id))[0].invitations[0];
+    return teamAction(db, user.id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: invitation.id, revision: invitation.revision });
+  }));
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 4);
+  assert.equal(await db.teamMember.count({ where: { teamId: team.id } }), 5);
+  await assert.rejects(db.teamMember.create({ data: { participationId: f.participations[7].id, teamId: team.id, editionId: f.edition.id, universityId: f.uni.id } }), "SQL trigger also rejects a raw sixth insertion");
+  await db.team.deleteMany({ where: { editionId: f.edition.id } });
+  const first = await createTeam(db, f.users[0].id, input()), second = await createTeam(db, f.users[1].id, input());
+  for (const [captain, t] of [[f.users[0],first], [f.users[1],second]] as const) await teamAction(db, captain.id, { operation: "invite", editionId: f.edition.id, teamId: t.id, email: f.users[2].email });
+  const invitations = (await teamsView(db, f.users[2].id))[0].invitations;
+  const competing = await Promise.allSettled(invitations.map(i => teamAction(db, f.users[2].id, { operation: "acceptInvitation", editionId: f.edition.id, invitationId: i.id, revision: i.revision })));
+  assert.equal(competing.filter(r => r.status === "fulfilled").length, 1);
+  assert.equal(await db.teamMember.count({ where: { participationId: f.participations[2].id } }), 1);
+});
+
+test("SQL rejects foreign year/university membership and invitations and fourth slot even without the service", async () => {
+  const team = await createTeam(db, f.users[0].id, input());
+  for (const participant of [f.participations[8], f.participations[9]]) {
+    await assert.rejects(db.teamMember.create({ data: { teamId: team.id, participationId: participant.id, editionId: f.edition.id, universityId: f.uni.id } }));
+  }
+  await assert.rejects(db.teamInvitation.create({ data: { teamId: team.id, editionId: f.edition.id, targetParticipationId: f.participations[8].id } }));
+  await assert.rejects(db.captainTransfer.create({ data: { teamId: team.id, editionId: f.edition.id, universityId: f.uni.id, targetParticipationId: f.participations[9].id } }));
+  await assert.rejects(db.team.create({ data: { editionId: f.edition.id, universityId: f.uni.id, captainParticipationId: f.participations[1].id, slot: 4, name: "Недопустимая команда", coachName: "Учебный тренер" } }));
+});

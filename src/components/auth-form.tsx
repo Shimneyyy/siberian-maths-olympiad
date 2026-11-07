@@ -58,7 +58,7 @@ export function AuthForm({ mode, universities = [], courses = [], resetToken = "
     <Link href="/" className="text-sm text-primary">← Сибирская математическая олимпиада</Link>
     <h1 className="mt-8 text-3xl font-semibold">{titles[mode]}</h1>
     <p className="mt-4 text-sm leading-6 text-slate-600">Учебная версия: используйте только вымышленные данные. Реальные персональные данные пока не принимаются.</p>
-    <form onSubmit={submit} className="mt-6 space-y-5">
+    <form method="post" onSubmit={submit} className="mt-6 space-y-5">
       {mode === "register" && <><label className="block">ФИО<input required name="name" minLength={3} maxLength={200} autoComplete="name" className={field} /></label>
         <label className="block">Университет<select required name="universityId" className={field} defaultValue=""><option value="" disabled>Выберите вуз</option>{universities.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}

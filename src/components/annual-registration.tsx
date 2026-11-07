@@ -18,7 +18,7 @@ function EditionRegistration({ edition, view, enabled }: { edition: View["editio
     <h2 className="text-2xl font-semibold">{edition.title} · {edition.year}{edition.isCurrent && <span className="ml-3 text-sm text-primary">Текущая олимпиада</span>}</h2>
     <p>{states[edition.state]}</p>
     {edition.opensAt && edition.closesAt && <p className="text-sm text-slate-600">С {date(edition.opensAt)} до {date(edition.closesAt)} (Новосибирск, UTC+7). В момент окончания приём закрывается.</p>}
-    {existing ? <p className="font-medium text-primary">{existing.status === "REGISTERED" ? "Вы зарегистрированы на этот год. Сведения — в истории ниже." : "Участие отменено."}</p> : edition.state === "OPEN" && enabled && view.profile ? <form className="space-y-4" onSubmit={async (event) => {
+    {existing ? <p className="font-medium text-primary">{existing.status === "REGISTERED" ? "Вы зарегистрированы на этот год. Сведения — в истории ниже." : "Участие отменено."}</p> : edition.state === "OPEN" && enabled && view.profile ? <form method="post" className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); setMessage("");
       const form = new FormData(event.currentTarget);
       try {

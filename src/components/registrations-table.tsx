@@ -96,7 +96,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
   return <div className="space-y-6">
     <p className="text-sm text-slate-600">{options.canSeeRemote ? "Список участников доступных вам годов, включая дистанционное участие." : "Список ограничен назначенными вам площадками. Отключённые площадки сохраняют ранее зарегистрированных участников."}</p>
     <p className="text-sm text-slate-600">Применённый список обновляется каждые 5 секунд. При потере связи данные скрываются и подключение повторяется.</p>
-    <form className="rounded-xl border border-border bg-white p-5" onSubmit={(event) => { event.preventDefault(); void load(filters); }}>
+    <form method="post" className="rounded-xl border border-border bg-white p-5" onSubmit={(event) => { event.preventDefault(); void load(filters); }}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label>Год олимпиады<select value={filters.editionId} onChange={(event) => change({ editionId: event.target.value, editionVenueId: undefined, universityName: undefined, courseLabel: undefined, teamId: undefined })} className={field}>{options.editions.map((e) => <option key={e.id} value={e.id}>{e.year} · {e.title}</option>)}</select></label>
         <label>Площадка<select value={filters.editionVenueId || ""} disabled={filters.format === "REMOTE"} onChange={(event) => change({ editionVenueId: event.target.value || undefined })} className={field}><option value="">Все доступные</option>{selectedEdition?.venues.map((v) => <option key={v.id} value={v.id}>{v.label}{!v.active && " (отключена)"}</option>)}</select></label>

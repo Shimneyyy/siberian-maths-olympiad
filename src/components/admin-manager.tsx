@@ -21,7 +21,7 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
   }
   return <div className="space-y-6"><p>Только синтетические аккаунты @example.test. Время — Новосибирск (UTC+7). Доступ к участникам и внешним паролям эта роль не даёт.</p>
     {editions.map(e => <section key={`${e.id}-${e.revision}`} className="space-y-4 rounded border p-5"><h2>{e.year} · {e.title}</h2>
-      <form className="space-y-3" onSubmit={async event => {
+      <form method="post" className="space-y-3" onSubmit={async event => {
         event.preventDefault(); const form = event.currentTarget, f = new FormData(form);
         const iso = (name: string) => new Date(`${f.get(name)}:00+07:00`).toISOString();
         await send("/api/admin/schedule", { editionId: e.id, revision: e.revision, registrationOpensAt: iso("opens"), registrationClosesAt: iso("closes"), registrationManuallyClosed: f.get("closed") === "on", password: f.get("password") });
@@ -34,7 +34,7 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
         <Button disabled={busy}>Сохранить сроки</Button>
       </form>
       <h3>Главные организаторы</h3>{e.staffGrants.map(g => <p key={g.user.email}>{g.user.name} · {g.user.email}</p>)}
-      <form className="space-y-3" onSubmit={async event => {
+      <form method="post" className="space-y-3" onSubmit={async event => {
         event.preventDefault(); const form = event.currentTarget, f = new FormData(form);
         await send("/api/admin/chief", { editionId: e.id, email: f.get("email"), name: f.get("name"), operation: f.get("operation"), password: f.get("password") });
         (form.elements.namedItem("password") as HTMLInputElement).value = "";
