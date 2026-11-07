@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  notificationEvents OutboxEvent[]
   id               String                 @id @default(uuid()) @db.Uuid
   email            String                 @unique @db.VarChar(254)
   name             String
@@ -81,6 +82,7 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  notificationEvents OutboxEvent[]
   teams Team[]
   id                         String                 @id @default(uuid()) @db.Uuid
   year                       Int                    @unique
@@ -181,6 +183,7 @@ model Venue {
 }
 
 model EditionVenue {
+  notificationEvents OutboxEvent[]
   id             String                 @id @default(uuid()) @db.Uuid
   editionId      String                 @db.Uuid
   venueId        String                 @db.Uuid
@@ -242,6 +245,7 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  notificationJobs OutboxJob[]
   teamInvitations TeamInvitation[]
   captainTransfers CaptainTransfer[]
   @@unique([id, editionId])
@@ -363,4 +367,53 @@ model CaptainTransfer {
   targetParticipationId String @db.Uuid
   target Participation @relation(fields: [targetParticipationId, editionId, universityId], references: [id, editionId, universityId], onDelete: Cascade)
   revision Int @default(0)
+}
+
+enum OutboxEventKind {
+  ANNOUNCEMENT
+  MAIL_BATCH
+  TRANSFER
+}
+enum OutboxJobStatus {
+  READY
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+model OutboxEvent {
+  id String @id @default(uuid()) @db.Uuid
+  kind OutboxEventKind
+  sourceId String @db.Uuid
+  sourceRevision Int
+  actorId String @db.Uuid
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  editionId String @db.Uuid
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  editionVenueId String? @db.Uuid
+  venue EditionVenue? @relation(fields: [editionVenueId, editionId], references: [id, editionId], onDelete: Restrict)
+  subjectTemplate String
+  bodyTemplate String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  jobs OutboxJob[]
+  @@unique([kind, sourceId, sourceRevision])
+  @@unique([id, editionId])
+}
+model OutboxJob {
+  id String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  editionId String @db.Uuid
+  event OutboxEvent @relation(fields: [eventId, editionId], references: [id, editionId], onDelete: Restrict)
+  participationId String @db.Uuid
+  participation Participation @relation(fields: [participationId, editionId], references: [id, editionId], onDelete: Restrict)
+  status OutboxJobStatus @default(READY)
+  attempts Int @default(0)
+  availableAt DateTime @default(now()) @db.Timestamptz(3)
+  leaseUntil DateTime? @db.Timestamptz(3)
+  leaseToken String? @db.Uuid
+  lastErrorCode String? @db.VarChar(80)
+  providerMessageId String? @db.VarChar(500)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([eventId, participationId])
+  @@index([status, availableAt])
 }
