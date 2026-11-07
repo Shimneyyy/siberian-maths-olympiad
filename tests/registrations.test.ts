@@ -111,7 +111,7 @@ test("pagination has a unique tie-breaker, bounded pages, and an allowlisted DTO
   const emailAsc = await listRegistrations(db, f.chief.id, { editionId: f.editions[0].id, sort: "email", pageSize: 100 });
   const emailDesc = await listRegistrations(db, f.chief.id, { editionId: f.editions[0].id, sort: "email", direction: "desc", pageSize: 100 });
   assert.deepEqual(emailAsc.rows.map((r) => r.email).reverse(), emailDesc.rows.map((r) => r.email));
-  assert.deepEqual(Object.keys(first.rows[0]).sort(),["id","fullName","email","universityName","courseLabel","status","format","remoteZone","registeredAt","venue"].sort());
+  assert.deepEqual(Object.keys(first.rows[0]).sort(),["attendance","id","fullName","email","universityName","courseLabel","status","format","remoteZone","registeredAt","venue"].sort());
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, pageSize: 1000 }));
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, sort: "consentId" }));
   await assert.rejects(listRegistrations(db, f.staff.id, { ...query, actorId: f.chief.id }));
@@ -154,4 +154,27 @@ test("CSV neutralizes formulas, leading controls, whitespace and quoted multilin
     assert.ok(csv.includes('"\'\t=1+1"'));
     assert.ok(csv.includes('"Курс, ""Тест""\nстрока"'));
   } finally { await db.participation.update({ where: { id: old.id }, data: { fullName: old.fullName, universityName: old.universityName, courseLabel: old.courseLabel } }); }
+});
+
+
+test("attendance requires scope/MFA and revision; concurrent edits conflict and audit has no personal data", async () => {
+  const { markAttendance } = await import("../src/lib/attendance");
+  const input = { editionId: f.editions[0].id, participationId: f.aIds[0], revision: 0, status: "PRESENT" };
+  for (const actor of [f.student, f.noMfa, f.otherStaff]) await assert.rejects(markAttendance(db, actor.id, input), AccessDenied);
+  await assert.rejects(markAttendance(db, f.staff.id, { ...input, editionId: f.editions[1].id }), AccessDenied);
+  await assert.rejects(markAttendance(db, f.staff.id, { ...input, actorId: f.chief.id }));
+  const results = await Promise.allSettled([markAttendance(db, f.staff.id, input), markAttendance(db, f.chief.id, { ...input, status: "ABSENT" })]);
+  assert.equal(results.filter(x => x.status === "fulfilled").length, 1);
+  const failed = results.find(x => x.status === "rejected") as PromiseRejectedResult;
+  assert.equal(failed.reason.code, "CONFLICT");
+  const roster = await listRegistrations(db, f.staff.id, { editionId: f.editions[0].id, pageSize: 100 });
+  assert.equal(roster.rows.find(x => x.id === input.participationId)!.attendance.revision, 1);
+  await markAttendance(db, f.staff.id, { ...input, revision: 1, status: "UNMARKED" });
+  assert.equal((await db.attendance.findUniqueOrThrow({ where: { participationId: input.participationId } })).revision, 2);
+  await db.venueStaffAssignment.updateMany({ where: { userId: f.staff.id }, data: { revokedAt: new Date() } });
+  try { await assert.rejects(markAttendance(db, f.staff.id, { ...input, revision: 2 }), AccessDenied); }
+  finally { await db.venueStaffAssignment.updateMany({ where: { userId: f.staff.id }, data: { revokedAt: null } }); }
+  const audit = await db.auditEvent.findMany({ where: { action: "ATTENDANCE_UPDATED", objectId: input.participationId } });
+  assert.equal(audit.length, 2);
+  assert.ok(!JSON.stringify(audit).includes("@example.test"));
 });

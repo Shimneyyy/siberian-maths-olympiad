@@ -34,6 +34,18 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
     } catch { if (requestId.current === current) setMessage("Не удалось получить список. Повторите запрос."); }
     finally { if (requestId.current === current) setBusy(false); }
   }
+  async function attendance(row: Result["rows"][number], status: string) {
+    const current = ++requestId.current;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: filters.editionId, participationId: row.id, revision: row.attendance.revision, status }) });
+      const result = await response.json();
+      if (current !== requestId.current) return;
+      if (!response.ok) { setMessage(result.error || "Не удалось изменить явку"); if ([401,403].includes(response.status)) setData(null); return; }
+      setData(old => old ? { ...old, rows: old.rows.map(p => p.id === row.id ? { ...p, attendance: result } : p) } : null);
+    } catch { if (current === requestId.current) setMessage("Не удалось получить ответ. Обновите список перед повтором."); }
+    finally { if (current === requestId.current) setBusy(false); }
+  }
   async function download() {
     const current = ++requestId.current;
     setBusy(true); setMessage("");
@@ -74,7 +86,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
       {!busy && !data && !message && <p>Нажмите «Показать участников», чтобы применить фильтры.</p>}
       {data && <section className="space-y-4" aria-label="Результаты поиска">
         <h2 className="text-xl font-semibold">{data.editionTitle} · {data.year}: найдено {data.total}</h2>
-        {!data.rows.length ? <p>В доступной вам области нет участников, соответствующих фильтрам.</p> : <div className="overflow-x-auto rounded-xl border border-border bg-white"><table className="w-full text-left text-sm"><caption className="sr-only">Участники {data.year}, страница {data.page}</caption><thead className="bg-muted"><tr>{["ФИО","Email","Вуз","Курс","Статус","Формат и площадка","Дата регистрации (НСК)"].map((x) => <th key={x} scope="col" className="whitespace-nowrap p-3">{x}</th>)}</tr></thead><tbody>{data.rows.map((p) => <tr key={p.id} className="border-t border-border"><td className="p-3">{p.fullName}</td><td className="p-3">{p.email}</td><td className="p-3">{p.universityName}</td><td className="p-3">{p.courseLabel}</td><td className="p-3">{p.status === "REGISTERED" ? "Зарегистрирован" : "Участие отменено"}</td><td className="p-3">{p.venue ? `${p.venue.label}${!p.venue.active ? " (отключена)" : ""}` : `Дистанционно · ${p.remoteZone === "MSK" ? "МСК UTC+3" : "НСК UTC+7"}`}</td><td className="whitespace-nowrap p-3">{new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Novosibirsk", dateStyle: "short", timeStyle: "short" }).format(new Date(p.registeredAt))}</td></tr>)}</tbody></table></div>}
+        {!data.rows.length ? <p>В доступной вам области нет участников, соответствующих фильтрам.</p> : <div className="overflow-x-auto rounded-xl border border-border bg-white"><table className="w-full text-left text-sm"><caption className="sr-only">Участники {data.year}, страница {data.page}</caption><thead className="bg-muted"><tr>{["ФИО","Email","Вуз","Курс","Статус","Формат и площадка","Дата регистрации (НСК)","Явка"].map((x) => <th key={x} scope="col" className="whitespace-nowrap p-3">{x}</th>)}</tr></thead><tbody>{data.rows.map((p) => <tr key={p.id} className="border-t border-border"><td className="p-3">{p.fullName}</td><td className="p-3">{p.email}</td><td className="p-3">{p.universityName}</td><td className="p-3">{p.courseLabel}</td><td className="p-3">{p.status === "REGISTERED" ? "Зарегистрирован" : "Участие отменено"}</td><td className="p-3">{p.venue ? `${p.venue.label}${!p.venue.active ? " (отключена)" : ""}` : `Дистанционно · ${p.remoteZone === "MSK" ? "МСК UTC+3" : "НСК UTC+7"}`}</td><td className="whitespace-nowrap p-3">{new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Novosibirsk", dateStyle: "short", timeStyle: "short" }).format(new Date(p.registeredAt))}</td><td className="p-3"><select aria-label={`Явка: ${p.fullName}`} value={p.attendance.status} disabled={busy} onChange={event => void attendance(p, event.target.value)} className={field}><option value="UNMARKED">Не отмечено</option><option value="PRESENT">Присутствовал</option><option value="ABSENT">Не присутствовал</option></select></td></tr>)}</tbody></table></div>}
         <nav aria-label="Страницы участников" className="flex flex-wrap items-center gap-4"><Button variant="outline" disabled={busy || data.page <= 1} onClick={() => load({ ...filters, page: data.page - 1 })}>Назад</Button><p>Страница {data.page} из {data.pages}</p><Button variant="outline" disabled={busy || data.page >= data.pages} onClick={() => load({ ...filters, page: data.page + 1 })}>Далее</Button></nav>
       </section>}
     </div>

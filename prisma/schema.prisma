@@ -30,6 +30,7 @@ model User {
   updatedAt        DateTime               @updatedAt @db.Timestamptz(3)
   profile          StudentProfile?
   consents         ConsentRecord[]
+  attendanceEdits  Attendance[]
   participations   Participation[]
 }
 
@@ -237,6 +238,7 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  attendance Attendance?
   id                     String              @id @default(uuid()) @db.Uuid
   userId                 String              @db.Uuid
   editionId              String              @db.Uuid
@@ -261,4 +263,20 @@ model Participation {
 
   @@unique([userId, editionId])
   @@index([editionId, editionVenueId, id])
+}
+
+enum AttendanceStatus {
+  UNMARKED
+  PRESENT
+  ABSENT
+}
+
+model Attendance {
+  participationId String @id @db.Uuid
+  participation Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  status AttendanceStatus
+  revision Int @default(1)
+  markedById String @db.Uuid
+  markedBy User @relation(fields: [markedById], references: [id], onDelete: Restrict)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }

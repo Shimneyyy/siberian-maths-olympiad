@@ -303,6 +303,9 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await request("/api/registrations/search", { ...rosterQuery, editionVenueId: nextSite.id })).status, 403);
     assert.equal((await request("/api/registrations/search", { ...rosterQuery, actorId: chief.id })).status, 400);
     assert.equal((await request("/api/registrations/search", { ...rosterQuery, sort: "consentId" })).status, 400);
+    assert.equal((await request("/api/attendance", { editionId: edition.id, participationId: firstData.id, revision: 0, status: "PRESENT" })).status, 200);
+    assert.equal((await request("/api/attendance", { editionId: edition.id, participationId: firstData.id, revision: 0, status: "ABSENT" })).status, 409);
+    assert.equal((await request("/api/attendance", { editionId: next.id, participationId: firstData.id, revision: 1, status: "ABSENT" })).status, 403);
     const page = await request("/cabinet/registrations"); assert.equal(page.status, 200);
     const html = await page.text(); assert.ok(html.includes(a.name)); assert.ok(!html.includes(b.email));
     await db.venueStaffAssignment.updateMany({ where: { userId: staff.id }, data: { revokedAt: new Date() } });

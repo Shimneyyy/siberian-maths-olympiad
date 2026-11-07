@@ -85,7 +85,7 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
     const page = Math.min(input.page, pages);
     // An interactive PostgreSQL transaction owns one connection; run its queries sequentially.
     const rows = await tx.participation.findMany({ where, orderBy: orderBy(input), skip: (page - 1) * input.pageSize, take: input.pageSize,
-      select: { id: true, fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
+      select: { attendance: { select: { status: true, revision: true } }, id: true, fullName: true, universityName: true, courseLabel: true, status: true, format: true, remoteZone: true, createdAt: true,
         user: { select: { email: true } },
         editionVenue: { select: { label: true, active: true, venue: { select: { name: true } } } },
       },
@@ -95,7 +95,7 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
     const edition = await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId }, select: { title: true, year: true } });
     return { editionId: input.editionId, editionTitle: edition.title, year: edition.year, page, pages, pageSize: input.pageSize, total,
       filters: { universityNames: universityNames.map((x) => x.universityName), courseLabels: courseLabels.map((x) => x.courseLabel) },
-      rows: rows.map((p) => ({ id: p.id, fullName: p.fullName, email: p.user.email, universityName: p.universityName, courseLabel: p.courseLabel,
+      rows: rows.map((p) => ({ attendance: p.attendance ?? { status: "UNMARKED" as const, revision: 0 }, id: p.id, fullName: p.fullName, email: p.user.email, universityName: p.universityName, courseLabel: p.courseLabel,
         status: p.status, format: p.format, remoteZone: p.remoteZone, registeredAt: p.createdAt.toISOString(),
         venue: p.editionVenue ? { label: p.editionVenue.label || p.editionVenue.venue.name, active: p.editionVenue.active } : null,
       })),
