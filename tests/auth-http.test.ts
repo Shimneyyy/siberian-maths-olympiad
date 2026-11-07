@@ -52,7 +52,7 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
   const replacement = `Replacement-${randomUUID()}`;
   const university = await db.university.findFirstOrThrow({ where: { active: true } });
   const course = await db.courseOption.findFirstOrThrow({ where: { active: true } });
-  const registration = { email, password, name: "Синтетический участник", universityId: university.id, courseId: course.id, demoConsent: true, role: "CHIEF_ORGANIZER" };
+  const registration = { email, password, name: "Синтетический участник", universityId: university.id, courseId: course.id, demoConsent: true, role: "TECHNICAL_ADMIN" };
   // Dedicated local fixture environment only: remove rate-limit fixtures before exercising flows.
   await db.rateLimit.deleteMany();
   try {
@@ -299,6 +299,21 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await request("/api/registrations/search", rosterQuery)).status, 403, "An old valid session does not bypass assignment revocation");
     const visible = await (await request("/api/registrations/options")).json() as { editions: unknown[] };
     assert.equal(visible.editions.length, 0);
+    assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: chief.email, name: chief.name, operation: "assign", password })).status, 403);
+    const staffAdminPage = await request("/cabinet/admin"); assert.equal(staffAdminPage.status, 307);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
+    assert.equal((await request("/cabinet/admin")).status, 307);
+    cookies.clear(); for (const [k, v] of adminCookies) cookies.set(k, v);
+    assert.equal((await request("/cabinet/registrations")).status, 307);
+    assert.equal((await request("/api/admin/chief", { editionId: next.id, email: chief.email, name: chief.name, operation: "assign", password })).status, 200);
+    await db.rateLimit.deleteMany({ where: { key: `admin-reauth:${admin.id}` } });
+    assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: a.email, name: a.name, operation: "assign", password })).status, 403, "Existing student cannot be promoted");
+    assert.equal((await request("/api/admin/chief", { editionId: edition.id, email: chief.email, name: chief.name, operation: "revoke", password })).status, 200);
+    assert.equal((await db.user.findUniqueOrThrow({ where: { id: chief.id } })).role, "CHIEF_ORGANIZER");
+    assert.equal((await db.participation.count({ where: { userId: a.id } })), 2);
+    cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
+    assert.equal((await request("/api/registrations/search", rosterQuery)).status, 401, "Revocation deletes old sessions");
+
 
   } finally {
     await db.$transaction(async (tx) => {
