@@ -15,7 +15,7 @@ function totp(uri: string) {
   const digest = createHmac("sha1",key).update(counter).digest();
   return String((digest.readUInt32BE(digest[digest.length-1]&15)&0x7fffffff)%1000000).padStart(6,"0");
 }
-test("D04 browser publication, cancelled reader, immutable content and HTTP authorization", { timeout: 180000 }, async () => {
+test("D04/D06/C11 browser, HTTP authorization and real SMTP", { timeout: 180000 }, async () => {
   const base = process.env.TEST_BASE_URL!;
   assert.ok(["localhost","127.0.0.1"].includes(new URL(base).hostname));
   assert.ok(new URL(process.env.DATABASE_URL!).pathname.startsWith("/smo_test_"));
@@ -97,6 +97,34 @@ test("D04 browser publication, cancelled reader, immutable content and HTTP auth
     const delivered = search.messages.find(m => m.Subject === "Учебное письмо 8090"); assert.ok(delivered);
     const message = await (await fetch(`http://127.0.0.1:8025/api/v1/message/${delivered.ID}`)).json() as { Text: string };
     assert.ok(message.Text.includes(reader.name)); assert.ok(!message.Text.includes("{{")); assert.ok(!message.Text.includes(password));
+    await db.rateLimit.deleteMany();
+    const venueA = await db.venue.create({data:{name:"Учебная площадка А"}}), venueB = await db.venue.create({data:{name:"Учебная площадка Б"}});
+    const siteA = await db.editionVenue.create({data:{editionId:edition.id,venueId:venueA.id,address:"Учебный адрес А"}});
+    const siteB = await db.editionVenue.create({data:{editionId:edition.id,venueId:venueB.id,address:"Учебный адрес Б"}});
+    const transferred = await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный перенос",emailVerified:true}});
+    const transferConsent = await db.consentRecord.create({data:{userId:transferred.id,purpose:"synthetic-demo-only",textVersion:"demo",textHash:"a".repeat(64)}});
+    const participation = await db.participation.create({data:{userId:transferred.id,editionId:edition.id,format:"ONSITE",editionVenueId:siteA.id,fullName:transferred.name,universityId:uni.id,universityName:uni.name,universityAbbreviation:uni.abbreviation,courseId:course.id,courseLabel:course.label,consentId:transferConsent.id}});
+    const transferInput = {editionId:edition.id,participationId:participation.id,editionVenueId:siteB.id,revision:0,reason:"Учебная причина",confirmed:true,password};
+    assert.equal((await post(recipient,"participations/transfer",transferInput)).status(),403);
+    assert.equal((await post(writer,"participations/transfer",{...transferInput,format:"REMOTE"})).status(),400);
+    assert.equal((await post(writer,"participations/transfer",transferInput,"https://untrusted.invalid")).status(),403);
+    await page.goto(`${base}/cabinet/transfer?editionId=${edition.id}&participationId=${participation.id}`);
+    await page.getByRole("heading",{name:"Перенос очной площадки",exact:true}).waitFor();
+    await page.locator('select[name="venue"]').selectOption(siteB.id);
+    await page.getByLabel("Причина переноса",{exact:false}).fill(transferInput.reason);
+    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
+    await page.getByLabel("Подтверждаю перенос",{exact:false}).check();
+    await page.getByRole("button",{name:"Перенести на площадку",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Площадка изменена"}).waitFor();
+    assert.equal((await db.participation.findUniqueOrThrow({where:{id:participation.id}})).editionVenueId,siteB.id);
+    assert.equal((await post(writer,"participations/transfer",transferInput)).status(),409);
+    await processEmail(db,sendMail);
+    assert.equal(await db.outboxJob.count({where:{status:"SENT"}}),4);
+    const transferSearch = await (await fetch(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${transferred.email}`)}`)).json() as {messages:{ID:string;Subject:string}[]};
+    const transferMail = transferSearch.messages.find(x=>x.Subject.includes("Изменение площадки")); assert.ok(transferMail);
+    const transferText = await (await fetch(`http://127.0.0.1:8025/api/v1/message/${transferMail.ID}`)).json() as {Text:string};
+    assert.ok(transferText.Text.includes(venueB.name)); assert.ok(!transferText.Text.includes(transferInput.reason));
+
     await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief.id,editionId:edition.id}},data:{revokedAt:new Date()}});
     assert.equal((await post(writer,"announcements/search",{editionId:edition.id})).status(),403);
     assert.equal((await post(recipient,"announcements/search",{editionId:other.id})).status(),403);

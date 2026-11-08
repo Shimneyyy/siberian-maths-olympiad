@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
+import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { setTimeout } from "node:timers/promises";
@@ -9,7 +10,7 @@ if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-htt
 const port = 3100;
 const base = `http://localhost:${port}`;
 if (!process.env.BETTER_AUTH_SECRET) throw new Error("Configure BETTER_AUTH_SECRET before HTTP tests");
-const env = { ...process.env, NODE_ENV: "development", DEMO_REGISTRATION: "true", BETTER_AUTH_URL: base, TEST_BASE_URL: base, NEXT_TELEMETRY_DISABLED: "1" };
+const env = { ...process.env, NODE_ENV: "development", DEMO_REGISTRATION: "true", BETTER_AUTH_URL: base, TEST_BASE_URL: base, NEXT_TELEMETRY_DISABLED: "1", SMO_TEST_DIST_DIR: ".next/test-runtime" };
 // Communications exercise immutable publications. Use a disposable local database,
 // then drop that database rather than bypassing publication protection to clean up.
 let control, disposable;
@@ -28,6 +29,7 @@ if (target === "tests/communications-http.test.ts") {
     }
   }
 }
+await rm(env.SMO_TEST_DIST_DIR, { recursive: true, force: true });
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: ["ignore", process.env.TEST_SERVER_LOG ? "pipe" : "ignore", "pipe"] });
 if (process.env.TEST_SERVER_LOG) {
   const log = createWriteStream(process.env.TEST_SERVER_LOG);
@@ -49,8 +51,9 @@ try {
   process.exitCode = await new Promise((resolve) => { run.on("exit", (code) => resolve(code ?? 1)); run.on("error", () => resolve(1)); });
 } finally {
   server.kill("SIGTERM");
+  await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.on("exit", resolve); });
+  await rm(env.SMO_TEST_DIST_DIR, { recursive: true, force: true });
   if (control) {
-    await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.on("exit", resolve); });
     await control.query(`DROP DATABASE "${disposable}" WITH (FORCE)`); await control.end();
   }
 }
