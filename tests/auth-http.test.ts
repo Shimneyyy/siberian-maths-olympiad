@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { existsSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import assert from "node:assert/strict";
@@ -430,7 +431,7 @@ test("externally created staff accounts require email proof, retain grants and M
       assert.equal((await request("/api/me")).status, 401);
       if (i === 0) {
         const { chromium } = await import("playwright");
-        const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || "/usr/bin/chromium", args: ["--no-sandbox"] });
+        const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
         try {
           const page = await browser.newPage();
           await page.goto(`${base}/login`);
