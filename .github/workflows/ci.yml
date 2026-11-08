@@ -48,6 +48,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:db
+      - run: docker compose --profile files up -d --wait clamav
+      - run: npm run test:files
       - run: npx playwright install --with-deps chromium
       - run: npm run test:http
       - run: npm run test:live
