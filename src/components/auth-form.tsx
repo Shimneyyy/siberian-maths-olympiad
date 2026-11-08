@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { nsuhwLoginPreview } from "@/lib/nsuhw-login-name-rules";
 import { Button } from "@/components/ui/button";
 
 type Choice = { id: string; label: string };
@@ -13,6 +14,9 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [hasLegacy, setHasLegacy] = useState(false);
+  const [firstNameLatin,setFirstNameLatin] = useState(""), [lastNameLatin,setLastNameLatin] = useState("");
+  const preview=nsuhwLoginPreview({firstNameLatin,lastNameLatin});
   const [email, setEmail] = useState("");
   const titles = { login: "Вход в личный кабинет", register: "Учебная регистрация", verify: "Подтверждение email", forgot: "Восстановление доступа", reset: "Новый пароль", "two-factor": "Подтверждение входа" };
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -23,7 +27,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     try {
       if (mode === "register") {
         const response = await fetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          ...((data.get("legacyLogin") || data.get("legacyConfirmed") === "on") ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : {}),
+          ...(hasLegacy ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : {firstNameLatin,lastNameLatin}),
           name: data.get("name"), email, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
         }) });
         if (!response.ok) throw new Error("Проверьте поля. Регистрация доступна только в учебном режиме с email @example.test.");
@@ -73,7 +77,13 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
       {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
       {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : 12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} /><span className="text-xs text-slate-600">Для нового пароля — не менее 12 символов.</span></label>}
       {["verify", "two-factor"].includes(mode) && <label className="block">Код {mode === "verify" ? "из письма" : "из приложения-аутентификатора"}<input name="code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} className={field} /></label>}
-      {mode === "register" && <fieldset className="space-y-3 rounded border p-3"><legend>Если у вас уже есть аккаунт nsuhw</legend><label className="block">Старый логин nsuhw (необязательно)<input name="legacyLogin" maxLength={254} className={field} autoComplete="off" /></label><label className="flex gap-3 text-sm"><input type="checkbox" name="legacyConfirmed" />Прошу главного организатора проверить и привязать этот логин. До проверки новые данные nsuhw мне не генерируются.</label><p className="text-sm">Пароль nsuhw не вводите. Новый аккаунт ЛК не подтверждает владение указанным логином.</p></fieldset>}
+      {mode === "register" && <fieldset className="space-y-3 rounded border p-3"><legend>Аккаунт nsuhw</legend>
+        <label className="flex gap-3"><input type="checkbox" checked={hasLegacy} onChange={e=>setHasLegacy(e.target.checked)} />У меня уже есть аккаунт nsuhw</label>
+        {hasLegacy?<><label className="block">Старый логин nsuhw<input name="legacyLogin" required maxLength={254} className={field} autoComplete="off" /></label><label className="flex gap-3 text-sm"><input type="checkbox" name="legacyConfirmed" required />Прошу главного организатора проверить и привязать этот логин. До проверки новые данные nsuhw мне не генерируются.</label><p className="text-sm">Пароль nsuhw не вводите. Новый аккаунт ЛК не подтверждает владение указанным логином.</p></>:<><p>Основное ФИО остаётся в исходном написании. Следующие поля нужны только для нового логина nsuhw: буквы A–Z, без пробелов и знаков. Написание выберите самостоятельно; автоматической транслитерации нет.</p>
+        <label className="block">Имя латиницей для логина<input name="firstNameLatin" value={firstNameLatin} onChange={e=>setFirstNameLatin(e.target.value)} required pattern="[A-Za-z]+" maxLength={80} autoComplete="off" className={field}/></label>
+        <label className="block">Фамилия латиницей для логина<input name="lastNameLatin" value={lastNameLatin} onChange={e=>setLastNameLatin(e.target.value)} required pattern="[A-Za-z]+" maxLength={80} autoComplete="off" className={field}/></label>
+        <p role="status">{preview?`Предварительный логин: ${preview}`:"Введите имя и фамилию латиницей, чтобы увидеть предварительный логин"}</p><p className="text-sm">Это ещё не выданный логин. При совпадении сервер добавит индекс: 2, 3 и далее. Генерация аккаунтов nsuhw пока не включена.</p></>}
+      </fieldset>}
       {mode === "register" && <label className="flex gap-3 text-sm leading-6"><input name="demoConsent" type="checkbox" required className="mt-1 size-5 shrink-0" />Использую только вымышленные данные. Это учебная заглушка, а не юридическое согласие на обработку реальных ПДн.</label>}
       <Button disabled={busy} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
       {message && <p role="status" className="rounded-lg border border-border bg-white p-4 text-sm">{message}</p>}

@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  nsuhwLoginName NsuhwLoginName?
   legacyNsuhwClaim LegacyNsuhwClaim? @relation("LegacyClaimOwner")
   legacyNsuhwApprovals LegacyNsuhwClaim[] @relation("LegacyClaimReviewer")
   mailBatches MailBatch[]
@@ -475,4 +476,12 @@ model LegacyNsuhwClaim {
   approvedBy User? @relation("LegacyClaimReviewer", fields: [approvedById], references: [id], onDelete: Restrict)
   approvedEdition OlympiadEdition? @relation(fields: [approvedEditionId], references: [id], onDelete: Restrict)
   @@index([approvedAt, createdAt])
+}
+
+model NsuhwLoginName {
+  userId String @id @db.Uuid
+  firstNameLatin String @db.VarChar(80)
+  lastNameLatin String @db.VarChar(80)
+  revision Int @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 }

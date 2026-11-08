@@ -1,5 +1,6 @@
 import { APIError } from "better-auth/api";
 import { z } from "zod";
+import { latinLoginPart, nsuhwLoginNamesSchema } from "./nsuhw-login-name-rules";
 import { legacyNsuhwLogin } from "./legacy-nsuhw-rules";
 export const DEMO_CONSENT_VERSION = "demo-only-v1";
 export const DEMO_CONSENT_TEXT = "Учебная заглушка: использую только вымышленные данные. Это не согласие на обработку реальных персональных данных.";
@@ -8,8 +9,12 @@ export const registrationSchema = z.object({
   email: z.email().max(254).transform((s) => s.trim().toLowerCase()),
   password: z.string().min(12).max(128),
   universityId: z.uuid(), courseId: z.uuid(), demoConsent: z.literal(true),
+  firstNameLatin: latinLoginPart.optional(), lastNameLatin: latinLoginPart.optional(),
   legacyNsuhwLogin: legacyNsuhwLogin.optional(), legacyNsuhwClaimConfirmed: z.boolean().optional(),
 }).superRefine((value,ctx) => {
+  if (value.legacyNsuhwLogin) {
+    if (value.firstNameLatin !== undefined || value.lastNameLatin !== undefined) ctx.addIssue({code:"custom",message:"Для старого аккаунта новые данные логина не собираются"});
+  } else if (!nsuhwLoginNamesSchema.safeParse({firstNameLatin:value.firstNameLatin,lastNameLatin:value.lastNameLatin}).success) ctx.addIssue({code:"custom",message:"Укажите имя и фамилию латиницей для нового логина"});
   if (!!value.legacyNsuhwLogin !== (value.legacyNsuhwClaimConfirmed === true)) ctx.addIssue({code:"custom",message:"Подтвердите заявку на проверку старого логина nsuhw"});
 });
 export function assertDemoRegistration(email: string) {

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
+import { NsuhwLoginNamesEditor } from "./nsuhw-login-names-editor";
 import { Button } from "@/components/ui/button";
 type Claim = {id:string;login:string;revision:number;approvedAt:string|null;userId?:string;participationId?:string;fullName?:string};
 export function LegacyNsuhwManager({chief,editions}:{chief:boolean;editions:{id:string;year:number}[]}) {
@@ -16,6 +17,7 @@ export function LegacyNsuhwManager({chief,editions}:{chief:boolean;editions:{id:
   return <section className="space-y-4">
     {chief?<><label>Год<select value={editionId} disabled={busy} onChange={e=>{setEdition(e.target.value);setClaims([]);setLoaded(false);}}>{editions.map(e=><option key={e.id} value={e.id}>{e.year}</option>)}</select></label><p>Сверьте заявку с ответственным за nsuhw вне сайта. ФИО и знание логина сами по себе не доказывают владение. Здесь видны только участники назначенного вам года с подтверждённым email.</p></>:<p>Если аккаунт nsuhw уже был, укажите его логин. Главный проверит связь после вашей регистрации на год. Пока заявка ожидает проверки, новые данные не генерируются.</p>}
     <Button disabled={!hydrated||busy||(chief&&!editionId)} onClick={()=>action(load)}>{chief?"Показать заявки":"Проверить мою заявку"}</Button>
+    {!chief&&loaded&&!claims.length&&<NsuhwLoginNamesEditor/>}
     {!chief&&loaded&&!claims.length&&<form method="post" className="space-y-3" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action(async()=>{await api("",{login:f.get("login"),confirmed:f.get("confirmed")==="on"});await load();setMessage("Заявка ожидает проверки главного организатора");});}}>
       <label className="block">Старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} autoComplete="off" /></label><label><input type="checkbox" name="confirmed" required />Прошу проверить принадлежность старого аккаунта</label><Button disabled={!hydrated||busy}>Отправить на проверку</Button>
     </form>}

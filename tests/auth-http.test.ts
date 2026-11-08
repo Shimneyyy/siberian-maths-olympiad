@@ -508,3 +508,30 @@ test("externally created staff accounts require email proof, retain grants and M
     await db.rateLimit.deleteMany();
   }
 });
+
+test("HTTP new signup stores Latin login names independently and enforces both signup branches",async()=>{
+ cookies.clear();await db.rateLimit.deleteMany();
+ const email=`latin-${randomUUID()}@example.test`,password=`Synthetic-${randomUUID()}`;
+ const uni=await db.university.findFirstOrThrow({where:{active:true}}),course=await db.courseOption.findFirstOrThrow({where:{active:true}});
+ const input={name:"Синтетический Иван Петров",email,password,universityId:uni.id,courseId:course.id,demoConsent:true,firstNameLatin:"Ivan",lastNameLatin:"Petrov"};
+ try{
+  assert.equal((await request("/api/auth/sign-up/email",{...input,lastNameLatin:"Pеtrov"})).status,400);
+  assert.equal((await request("/api/auth/sign-up/email",{...input,legacyNsuhwLogin:"legacy.conflict",legacyNsuhwClaimConfirmed:true})).status,400);
+  assert.equal(await db.user.findUnique({where:{email}}),null);
+  assert.equal((await request("/api/auth/sign-up/email",input)).status,200);
+  const user=await db.user.findUniqueOrThrow({where:{email},include:{profile:true,nsuhwLoginName:true}});
+  assert.equal(user.name,input.name);assert.equal(user.profile?.fullName,input.name);
+  assert.equal(user.nsuhwLoginName?.firstNameLatin,"Ivan");assert.equal(user.nsuhwLoginName?.lastNameLatin,"Petrov");
+  assert.equal(await db.legacyNsuhwClaim.findUnique({where:{userId:user.id}}),null);
+  const code=(await mail(email,"Подтверждение")).match(/\b\d{6}\b/)?.[0];assert.ok(code);
+  assert.equal((await request("/api/auth/email-otp/verify-email",{email,otp:code})).status,200);
+  assert.equal((await request("/api/auth/sign-in/email",{email,password})).status,200);
+  const view=await request("/api/nsuhw/login-names");assert.equal(view.status,200);assert.ok(view.headers.get("cache-control")?.includes("no-store"));
+  assert.equal((await view.json() as {preview:string}).preview,"smc.i.petrov");
+  assert.equal((await request("/api/nsuhw/login-names",{firstNameLatin:"Ivan",lastNameLatin:"Petrov",revision:0,userId:randomUUID()})).status,400);
+ }finally{
+  cookies.clear();const user=await db.user.findUnique({where:{email}});
+  if(user){await db.nsuhwLoginName.deleteMany({where:{userId:user.id}});await db.auditEvent.deleteMany({where:{actorId:user.id}});await db.studentProfile.deleteMany({where:{userId:user.id}});await db.consentRecord.deleteMany({where:{userId:user.id}});await db.user.delete({where:{id:user.id}});}
+  await db.rateLimit.deleteMany();
+ }
+});
