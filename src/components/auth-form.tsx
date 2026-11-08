@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 
 type Choice = { id: string; label: string };
 type Mode = "login" | "register" | "verify" | "forgot" | "reset" | "two-factor";
-export function AuthForm({ mode, universities = [], courses = [], resetToken = "" }:
+export function AuthForm({ mode: initialMode, universities = [], courses = [], resetToken = "" }:
  { mode: Mode; universities?: Choice[]; courses?: Choice[]; resetToken?: string }) {
   const router = useRouter();
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
@@ -29,6 +30,12 @@ export function AuthForm({ mode, universities = [], courses = [], resetToken = "
       }
       if (mode === "login") {
         const result = await authClient.signIn.email({ email, password });
+        if (result.error?.code === "EMAIL_NOT_VERIFIED") {
+          const sent = await authClient.emailOtp.sendVerificationOtp({ email, type: "email-verification" });
+          setMode("verify");
+          setMessage(sent.error ? "Не удалось отправить код. Повторите отправку ниже." : "Для входа подтвердите email кодом из письма. Смена пароля сама по себе не подтверждает email.");
+          return;
+        }
         if (result.error) throw new Error("Не удалось войти. Проверьте данные и подтверждение email.");
         router.refresh(); router.push(result.data && "twoFactorRedirect" in result.data && result.data.twoFactorRedirect ? "/two-factor" : "/cabinet"); return;
       }
@@ -45,7 +52,7 @@ export function AuthForm({ mode, universities = [], courses = [], resetToken = "
       if (mode === "reset") {
         const result = await authClient.resetPassword({ token: resetToken, newPassword: password });
         if (result.error) throw new Error("Ссылка недействительна или истекла. Запросите новую.");
-        setMessage("Пароль изменён. Войдите с новым паролем."); return;
+        setMessage("Пароль изменён. Войдите с новым паролем. Если email ещё не подтверждён, при входе будет отправлен код подтверждения. Для организаторов и администратора также требуется TOTP."); return;
       }
       const result = await authClient.twoFactor.verifyTotp({ code: value, trustDevice: false });
       if (result.error) throw new Error("Код неверен или истёк.");

@@ -393,3 +393,112 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     });
   }
 });
+
+test("externally created staff accounts require email proof, retain grants and MFA across recovery", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { manageChief } = await import("../src/lib/admin");
+  const { assignVenueStaff } = await import("../src/lib/staff");
+  const tag = randomUUID(), password = `Synthetic-${tag}`;
+  const emails = ["admin", "chief", "venue"].map(x => `${x}-${tag}@example.test`);
+  const edition = await db.olympiadEdition.create({ data: { year: 7990, title: "Учебный вход" } });
+  const venue = await db.venue.create({ data: { name: "Учебная площадка входа" } });
+  const site = await db.editionVenue.create({ data: { editionId: edition.id, venueId: venue.id, address: "Синтетический адрес" } });
+  const reset = async (email: string, nextPassword: string) => {
+    await db.rateLimit.deleteMany();
+    assert.equal((await request("/api/auth/request-password-reset", { email, redirectTo: "/reset-password" })).status, 200);
+    const link = (await mail(email, "Восстановление")).match(/https?:\/\/\S+/)?.[0]; assert.ok(link);
+    const response = await request(new URL(link).pathname + new URL(link).search);
+    const location = response.headers.get("location"); assert.ok(location);
+    const token = new URL(location, origin).searchParams.get("token"); assert.ok(token);
+    assert.notEqual((await request("/api/auth/reset-password", { token: "invalid-token", newPassword: nextPassword })).status, 200);
+    assert.equal((await request("/api/auth/reset-password", { token, newPassword: nextPassword })).status, 200);
+    assert.notEqual((await request("/api/auth/reset-password", { token, newPassword: password })).status, 200);
+  };
+  try {
+    await promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/bootstrap-admin.ts", emails[0], "Учебный администратор"]);
+    for (let i = 0; i < emails.length; i++) {
+      cookies.clear(); await db.rateLimit.deleteMany();
+      const email = emails[i];
+      const user = await db.user.findUniqueOrThrow({ where: { email } });
+      assert.equal(user.emailVerified, false);
+      assert.equal(await db.account.count({ where: { userId: user.id } }), 0);
+      await reset(email, password);
+      assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).emailVerified, false, "Recovery is not email verification");
+      const denied = await request("/api/auth/sign-in/email", { email, password });
+      assert.equal((await denied.json() as { code: string }).code, "EMAIL_NOT_VERIFIED");
+      assert.equal((await request("/api/me")).status, 401);
+      if (i === 0) {
+        const { chromium } = await import("playwright");
+        const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || "/usr/bin/chromium", args: ["--no-sandbox"] });
+        try {
+          const page = await browser.newPage();
+          await page.goto(`${base}/login`);
+          await page.locator('input[type="email"]').fill(email);
+          await page.locator('input[name="password"]').fill(password);
+          await page.waitForTimeout(1000);
+          await page.getByRole("button", { name: "Продолжить", exact: true }).click();
+          await page.getByRole("heading", { name: "Подтверждение email", exact: true }).waitFor();
+          assert.equal(await page.locator('input[type="email"]').inputValue(), email);
+          assert.ok((await page.getByRole("status").textContent())?.includes("подтвердите email"));
+          assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).emailVerified, false);
+        } finally { await browser.close(); }
+      }
+      const before = (await db.verification.findMany()).map(v => v.id);
+      assert.equal((await request("/api/auth/email-otp/send-verification-otp", { email, type: "email-verification" })).status, 200);
+      let code = (await mail(email, "Подтверждение")).match(/\b\d{6}\b/)?.[0]; assert.ok(code);
+      assert.notEqual((await request("/api/auth/email-otp/verify-email", { email, otp: code === "000000" ? "111111" : "000000" })).status, 200);
+      await db.verification.updateMany({ where: { id: { notIn: before } }, data: { expiresAt: new Date(0) } });
+      assert.notEqual((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
+      assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).emailVerified, false);
+      await request("/api/auth/email-otp/send-verification-otp", { email, type: "email-verification" });
+      code = (await mail(email, "Подтверждение")).match(/\b\d{6}\b/)?.[0]; assert.ok(code);
+      assert.equal((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
+      assert.notEqual((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
+      assert.equal((await request("/api/auth/sign-in/email", { email, password })).status, 200);
+      const enrollment = await request("/api/auth/two-factor/enable", { password, method: "totp" });
+      assert.equal(enrollment.status, 200);
+      const factor = await enrollment.json() as { totpURI: string };
+      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
+      const protectedFactor = await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } });
+      const replacement = `Replacement-${tag}`;
+      const oldCookies = [...cookies].map(([k,v]) => `${k}=${v}`).join("; ");
+      await reset(email, replacement);
+      assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: oldCookies } })).status, 401);
+      cookies.clear();
+      assert.notEqual((await request("/api/auth/sign-in/email", { email, password })).status, 200);
+      const challenge = await request("/api/auth/sign-in/email", { email, password: replacement });
+      assert.equal((await challenge.json() as { twoFactorRedirect: boolean }).twoFactorRedirect, true);
+      assert.equal((await request("/api/me")).status, 401);
+      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
+      const preserved = await db.user.findUniqueOrThrow({ where: { email } });
+      assert.equal(preserved.role, user.role); assert.equal(preserved.twoFactorEnabled, true);
+      assert.deepEqual(await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } }), protectedFactor);
+      if (i === 0) await manageChief(db, user.id, { editionId: edition.id, email: emails[1], name: "Учебный главный", operation: "assign", password: replacement });
+      if (i === 1) {
+        assert.equal(await db.editionStaffGrant.count({ where: { userId: user.id, editionId: edition.id, revokedAt: null } }), 1);
+        await assignVenueStaff(db, user.id, { editionId: edition.id, editionVenueId: site.id, email: emails[2], name: "Учебный организатор" });
+      }
+      if (i === 2) assert.equal(await db.venueStaffAssignment.count({ where: { userId: user.id, editionVenueId: site.id, revokedAt: null } }), 1);
+      // An expired reset must neither replace the password nor clear MFA.
+      await db.rateLimit.deleteMany();
+      await request("/api/auth/request-password-reset", { email, redirectTo: "/reset-password" });
+      await db.verification.updateMany({ where: { value: user.id }, data: { expiresAt: new Date(0) } });
+      const expiredLink = (await mail(email, "Восстановление")).match(/https?:\/\/\S+/)?.[0]; assert.ok(expiredLink);
+      const expiredToken = new URL(expiredLink).pathname.split("/").pop();
+      assert.notEqual((await request("/api/auth/reset-password", { token: expiredToken, newPassword: password })).status, 200);
+      assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).twoFactorEnabled, true);
+    }
+  } finally {
+    cookies.clear();
+    const users = await db.user.findMany({ where: { email: { in: emails } } });
+    await db.auditEvent.deleteMany({ where: { OR: [{ editionId: edition.id }, { actorId: { in: users.map(u => u.id) } }, { objectId: { in: users.map(u => u.id) } }] } });
+    await db.venueStaffAssignment.deleteMany({ where: { editionId: edition.id } });
+    await db.editionStaffGrant.deleteMany({ where: { editionId: edition.id } });
+    await db.editionVenue.deleteMany({ where: { editionId: edition.id } });
+    await db.olympiadEdition.delete({ where: { id: edition.id } });
+    await db.venue.delete({ where: { id: venue.id } });
+    await db.user.deleteMany({ where: { email: { in: emails } } });
+    await db.rateLimit.deleteMany();
+  }
+});
