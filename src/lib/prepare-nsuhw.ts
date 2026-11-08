@@ -10,7 +10,7 @@ import { OlympiadError } from "./olympiad-rules";
 import { loadDemoKeyProtector } from "./external-secrets/local-keys";
 import { storePreparedExternalAccount } from "./external-secrets/storage";
 import type { KeyProtector } from "./external-secrets/envelope";
-const metadata={id:true,login:true,createdAt:true} as const;
+const metadata={id:true,login:true,createdAt:true,confirmedAt:true} as const;
 function newPassword(){const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";for(;;){const value=Array.from({length:24},()=>chars[randomInt(chars.length)]).join("");if(/[A-Z]/.test(value)&&/[a-z]/.test(value)&&/[0-9]/.test(value))return value;}}
 // Trusted signup/internal transaction only. No plaintext leaves this function.
 export async function prepareNsuhwInTransaction(tx:Prisma.TransactionClient,userId:string,protector?:KeyProtector,expectedNameRevision?:number){

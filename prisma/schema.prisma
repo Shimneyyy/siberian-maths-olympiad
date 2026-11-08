@@ -14,7 +14,10 @@ enum Role {
 }
 
 model User {
-  preparedExternalAccount PreparedExternalAccount?
+  nsuhwExportsAuthored NsuhwExportBatch[] @relation("NsuhwExportAuthor")
+  nsuhwExportsConfirmed NsuhwExportBatch[] @relation("NsuhwExportConfirmer")
+  nsuhwAccountsConfirmed PreparedExternalAccount[] @relation("NsuhwAccountConfirmer")
+  preparedExternalAccount PreparedExternalAccount? @relation("PreparedOwner")
   nsuhwLoginName NsuhwLoginName?
   legacyNsuhwClaim LegacyNsuhwClaim? @relation("LegacyClaimOwner")
   legacyNsuhwApprovals LegacyNsuhwClaim[] @relation("LegacyClaimReviewer")
@@ -88,6 +91,8 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  nsuhwExports NsuhwExportBatch[]
+  nsuhwAccountsConfirmed PreparedExternalAccount[]
   legacyNsuhwApprovals LegacyNsuhwClaim[]
   mailBatches MailBatch[]
   announcements Announcement[]
@@ -384,6 +389,7 @@ enum OutboxEventKind {
   ANNOUNCEMENT
   MAIL_BATCH
   TRANSFER
+  EXTERNAL_ACCOUNT_READY
 }
 enum OutboxJobStatus {
   READY
@@ -497,6 +503,25 @@ model PreparedExternalAccount {
   revision Int @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  confirmedAt DateTime? @db.Timestamptz(3)
+  confirmedById String? @db.Uuid
+  confirmedEditionId String? @db.Uuid
+  confirmedBy User? @relation("NsuhwAccountConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedEdition OlympiadEdition? @relation(fields: [confirmedEditionId], references: [id], onDelete: Restrict)
+  user User @relation("PreparedOwner", fields: [userId], references: [id], onDelete: Restrict)
   @@index([keyVersion])
+}
+
+model NsuhwExportBatch {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  actorId String @db.Uuid
+  items Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  confirmedAt DateTime? @db.Timestamptz(3)
+  confirmedById String? @db.Uuid
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  actor User @relation("NsuhwExportAuthor", fields: [actorId], references: [id], onDelete: Restrict)
+  confirmedBy User? @relation("NsuhwExportConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict)
+  @@index([editionId, createdAt])
 }
