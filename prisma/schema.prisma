@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  mailBatches MailBatch[]
   announcements Announcement[]
   notificationEvents OutboxEvent[]
   id               String                 @id @default(uuid()) @db.Uuid
@@ -83,6 +84,7 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  mailBatches MailBatch[]
   announcements Announcement[]
   notificationEvents OutboxEvent[]
   teams Team[]
@@ -185,6 +187,7 @@ model Venue {
 }
 
 model EditionVenue {
+  mailBatches MailBatch[]
   announcements Announcement[]
   notificationEvents OutboxEvent[]
   id             String                 @id @default(uuid()) @db.Uuid
@@ -436,5 +439,22 @@ model Announcement {
   edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
   editionVenue EditionVenue? @relation(fields: [editionVenueId, editionId], references: [id, editionId], onDelete: Restrict)
   author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  @@index([editionId, publishedAt])
+}
+
+model MailBatch {
+  id String @id @db.Uuid
+  editionId String @db.Uuid
+  editionVenueId String? @db.Uuid
+  actorId String @db.Uuid
+  repeatOf String? @db.Uuid
+  subjectTemplate String @db.VarChar(200)
+  bodyTemplate String
+  publishedAt DateTime @default(now()) @db.Timestamptz(3)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  editionVenue EditionVenue? @relation(fields: [editionVenueId, editionId], references: [id, editionId], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  previous MailBatch? @relation("MailRepeat", fields: [repeatOf], references: [id], onDelete: Restrict)
+  repeats MailBatch[] @relation("MailRepeat")
   @@index([editionId, publishedAt])
 }

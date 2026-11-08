@@ -110,3 +110,54 @@ test("outbox failure rolls publication and audit back; cross-year audience is re
     await assert.rejects(announcementsView(db, user.id, { editionId: edition }));
   }
 });
+test("D06 retries deduplicate; separately confirmed repeat selects current audience including cancelled participants", async () => {
+  const { sendMailBatch } = await import("../src/lib/mail-batches");
+  await db.rateLimit.deleteMany();
+  const input = { id: randomUUID(), editionId: edition, editionVenueId: site, subjectTemplate: "СМО {{year}}", bodyTemplate: "Здравствуйте, {{name}}. {{university}} {{team}} {{venue}}", confirm: true, password };
+  const first = await sendMailBatch(db, chief, input);
+  assert.equal(first.count, 1);
+  assert.deepEqual(await sendMailBatch(db, chief, input), first);
+  assert.equal(await db.mailBatch.count(), 1);
+  const cancelled = await db.participation.findUniqueOrThrow({ where: { userId_editionId: { userId: student, editionId: edition } } });
+  const other = await db.participation.findUniqueOrThrow({ where: { userId_editionId: { userId: outsider, editionId: edition } } });
+  await db.participation.update({ where: { id: cancelled.id }, data: { editionVenueId: other.editionVenueId } });
+  await db.participation.update({ where: { id: other.id }, data: { editionVenueId: site } });
+  const repeat = { ...input, id: randomUUID(), repeatOf: first.id, confirmRepeat: true };
+  await assert.rejects(sendMailBatch(db, chief, { ...repeat, confirmRepeat: false }));
+  const result = await sendMailBatch(db, chief, repeat);
+  assert.equal(result.count, 1);
+  const event = await db.outboxEvent.findFirstOrThrow({ where: { sourceId: result.id }, include: { jobs: true } });
+  assert.equal(event.jobs[0].participationId, other.id);
+  const original = await db.outboxEvent.findFirstOrThrow({ where: { sourceId: first.id }, include: { jobs: true } });
+  assert.equal(original.jobs[0].participationId, cancelled.id);
+  await db.participation.update({ where: { id: cancelled.id }, data: { editionVenueId: site } });
+  await db.participation.update({ where: { id: other.id }, data: { editionVenueId: other.editionVenueId } });
+});
+test("D06 rejects forbidden template fields, foreign scope, spoofed actor, changed repeat and missing confirmation", async () => {
+  const { sendMailBatch, mailBatchesView } = await import("../src/lib/mail-batches");
+  await db.rateLimit.deleteMany();
+  const input = { id: randomUUID(), editionId: edition, editionVenueId: null, subjectTemplate: "Учебное письмо", bodyTemplate: "Здравствуйте, {{name}}", confirm: true, password };
+  await assert.rejects(sendMailBatch(db, chief, { ...input, bodyTemplate: "{{password}}" }));
+  await assert.rejects(sendMailBatch(db, chief, { ...input, subjectTemplate: "{{token}}" }));
+  await assert.rejects(sendMailBatch(db, student, input));
+  await assert.rejects(sendMailBatch(db, chief, { ...input, editionId: foreign }));
+  await assert.rejects(sendMailBatch(db, chief, { ...input, actorId: student }));
+  await assert.rejects(sendMailBatch(db, chief, { ...input, confirm: false }));
+  const sent = await sendMailBatch(db, chief, input);
+  await assert.rejects(sendMailBatch(db, chief, { ...input, bodyTemplate: "Изменённое письмо" }));
+  await assert.rejects(sendMailBatch(db, chief, { ...input, id: randomUUID(), repeatOf: sent.id, confirmRepeat: true, subjectTemplate: "Изменённое письмо" }));
+  await assert.rejects(mailBatchesView(db, student, { editionId: edition }));
+  await assert.rejects(mailBatchesView(db, chief, { editionId: foreign }));
+});
+test("D06 mail batch is atomic with outbox and revocation blocks future sends", async () => {
+  const { sendMailBatch } = await import("../src/lib/mail-batches");
+  await db.rateLimit.deleteMany();
+  const input = { id: randomUUID(), editionId: edition, editionVenueId: null, subjectTemplate: "Учебное письмо", bodyTemplate: "Тест {{year}}", confirm: true, password };
+  const broken = db.$extends({ query: { outboxJob: { async createMany() { throw new Error("Synthetic outbox outage"); } } } });
+  await assert.rejects(sendMailBatch(broken as unknown as PrismaClient, chief, input));
+  assert.equal(await db.mailBatch.count({ where: { id: input.id } }), 0);
+  assert.equal(await db.outboxEvent.count({ where: { sourceId: input.id } }), 0);
+  await db.editionStaffGrant.update({ where: { userId_editionId: { userId: chief, editionId: edition } }, data: { revokedAt: new Date() } });
+  await assert.rejects(sendMailBatch(db, chief, input));
+  await db.editionStaffGrant.update({ where: { userId_editionId: { userId: chief, editionId: edition } }, data: { revokedAt: null } });
+});
