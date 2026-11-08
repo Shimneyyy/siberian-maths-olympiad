@@ -91,3 +91,41 @@ test("E05 requires chief scope/MFA/password and separate import confirmation; re
  const exported=await f.download();await assert.rejects(confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:false}));
  await db.editionStaffGrant.update({where:{userId_editionId:{userId:f.chief.id,editionId:f.edition.id}},data:{revokedAt:new Date()}});await assert.rejects(confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:true}));
 });
+test("E06 reveals only a confirmed owner's secret after fresh password proof and never mutates it",async()=>{
+ const {revealNsuhwSecret}=await import("../src/lib/reveal-nsuhw");
+ const f=await fixture(),owner=f.participants[0].user;
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys));
+ const exported=await f.download();await confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:true});
+ const before=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:owner.id}});
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password:"wrong",confirmed:true},keys));
+ const first=await revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys),second=await revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys);
+ assert.deepEqual(first,second);assert.equal(first.password,await openExternalPassword(before.secretEnvelope,externalSecretContext(before),keys));assert.notEqual(first.password,password);
+ assert.deepEqual(await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:owner.id}}),before);
+ const audit=await db.auditEvent.findMany({where:{actorId:owner.id,action:"NSUHW_SECRET_REVEALED"}});assert.equal(audit.length,2);assert.ok(!JSON.stringify(audit).includes(first.password));
+ assert.equal(await db.outboxJob.count({where:{event:{editionId:f.edition.id}}}),2);
+});
+test("E06 role, ownership substitution, missing confirmation, email verification and throttling are enforced",async()=>{
+ const {revealNsuhwSecret}=await import("../src/lib/reveal-nsuhw");
+ const f=await fixture(),owner=f.participants[0].user,exported=await f.download();await confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:true});
+ await assert.rejects(revealNsuhwSecret(db,f.chief.id,{password,confirmed:true},keys));await assert.rejects(revealNsuhwSecret(db,admin,{password,confirmed:true},keys));
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true,userId:f.participants[1].user.id},keys));
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:false},keys));
+ await db.user.update({where:{id:owner.id},data:{emailVerified:false}});await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys));await db.user.update({where:{id:owner.id},data:{emailVerified:true}});
+ for(let i=0;i<5;i++)await assert.rejects(revealNsuhwSecret(db,owner.id,{password:"wrong",confirmed:true},keys));
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys),e=>(e as Error).constructor.name==="AdminRateLimit");
+ assert.equal(await db.auditEvent.count({where:{actorId:owner.id,action:"NSUHW_SECRET_REVEALED"}}),0);
+});
+test("E06 key/audit failure does not disclose; changing the LK password leaves the external password unchanged",async()=>{
+ const {revealNsuhwSecret}=await import("../src/lib/reveal-nsuhw");
+ const f=await fixture(),owner=f.participants[0].user,exported=await f.download();await confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:true});
+ const before=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:owner.id}}),expected=await openExternalPassword(before.secretEnvelope,externalSecretContext(before),keys);
+ const brokenKey={activeVersion:"missing",async wrapKey():Promise<never>{throw new Error("Synthetic outage");},async unwrapKey():Promise<never>{throw new Error("Synthetic outage");}};
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true},brokenKey));
+ const brokenAudit=db.$extends({query:{auditEvent:{async create(){throw new Error("Synthetic audit outage");}}}});
+ await assert.rejects(revealNsuhwSecret(brokenAudit as unknown as PrismaClient,owner.id,{password,confirmed:true},keys));
+ assert.equal(await db.auditEvent.count({where:{actorId:owner.id,action:"NSUHW_SECRET_REVEALED"}}),0);
+ const replacement=`Replacement-${randomUUID()}`;await db.account.updateMany({where:{userId:owner.id,providerId:"credential"},data:{password:await hashPassword(replacement)}});
+ await assert.rejects(revealNsuhwSecret(db,owner.id,{password,confirmed:true},keys));
+ assert.equal((await revealNsuhwSecret(db,owner.id,{password:replacement,confirmed:true},keys)).password,expected);
+ assert.deepEqual(await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:owner.id}}),before);
+});
