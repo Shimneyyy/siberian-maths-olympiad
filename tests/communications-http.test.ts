@@ -284,7 +284,42 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal(errors.length,0);
 
     assert.equal(errors.length,0);
+    // E07: real CSV file selection, preview and partial import; never publish.
+    await db.rateLimit.deleteMany();
+    const resultCsv = `Логин,Задача 1,Задача 2,Сумма,Приз\r\n${accountBefore.login},0,,17,"Приз, учебный"\r\nunknown.synthetic,2,3,5,\r\n`;
+    const resultInput = { editionId: edition.id, kind: "PRELIMINARY", csv: resultCsv };
+    assert.equal((await post(recipient,"results/import/preview",resultInput)).status(),403);
+    assert.equal((await post(writer,"results/import/preview",resultInput,"https://untrusted.invalid")).status(),403);
+    assert.equal((await post(writer,"results/import/preview",{...resultInput,editionId:other.id})).status(),403);
+    assert.equal((await post(writer,"results/import/preview",{...resultInput,actorId:reader.id})).status(),400);
+    assert.equal((await post(writer,"results/import/preview",{...resultInput,csv:"x".repeat(1048576)})).status(),413);
+    await page.bringToFront(); await page.goto(`${base}/cabinet/results-import`);
+    await page.getByLabel("Файл CSV",{exact:false}).setInputFiles({name:"synthetic-results.csv",mimeType:"text/csv",buffer:Buffer.from(resultCsv,"utf8")});
+    await page.getByRole("button",{name:"Предпросмотр результатов",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Верных строк: 1. Ошибок: 1."}).waitFor();
+    assert.equal(await db.individualResult.count(),0);
+    const previewResponse = await post(writer,"results/import/preview",resultInput);
+    assert.equal(previewResponse.status(),200); assert.ok(previewResponse.headers()["cache-control"].includes("no-store"));
+    const checked = await previewResponse.json();
+    assert.ok(!JSON.stringify(checked).includes("secretEnvelope"));
+    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
+    await page.getByLabel("Подтверждаю загрузку только верных строк",{exact:false}).check();
+    await page.getByRole("button",{name:"Загрузить верные строки",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Загружено: 1. Пропущено: 1. Результаты не опубликованы."}).waitFor();
+    const resultBatch=await db.resultImportBatch.findFirstOrThrow();
+    const result=await db.individualResult.findFirstOrThrow({include:{scores:{include:{problem:true}}}});
+    assert.equal(result.total,17);assert.deepEqual(result.scores.sort((a,b)=>a.problem.ordinal-b.problem.ordinal).map(s=>s.score),[0,null]);
+    assert.equal(await db.outboxJob.count(),6);
+    const replay={...resultInput,id:resultBatch.id,selectionHash:checked.selectionHash,password,confirmed:true};
+    assert.equal((await post(writer,"results/import/apply",replay)).status(),200);
+    assert.equal(await db.individualResult.count(),1);
+    assert.equal((await post(recipient,"results/import/apply",replay)).status(),403);
+    assert.equal((await recipient.request.get(`${base}/api/results/import/preview`)).status(),405);
+    await viewed.goto(`${base}/cabinet/results-import`);assert.equal(new URL(viewed.url()).pathname,"/cabinet");
+    assert.ok(!(await viewed.content()).includes("Приз, учебный"));
+    assert.equal(errors.length,0);
     await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief.id,editionId:edition.id}},data:{revokedAt:new Date()}});
+    assert.equal((await post(writer,"results/import/preview",resultInput)).status(),403);
     assert.equal((await post(writer,"announcements/search",{editionId:edition.id})).status(),403);
     assert.equal((await post(recipient,"announcements/search",{editionId:other.id})).status(),403);
   } finally { await browser.close(); await db.$disconnect(); }

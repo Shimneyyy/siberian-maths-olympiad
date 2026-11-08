@@ -44,6 +44,7 @@ jobs:
       - run: npm run db:migrate
       - run: npm run db:seed
       - run: npm run db:seed
+      - run: DEMO_REGISTRATION=true npm run nsuhw:keys -- init
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:db
@@ -52,3 +53,4 @@ jobs:
       - run: npm run test:live
       - run: npm run test:communications
       - run: npm run build
+      - run: npm run check:build

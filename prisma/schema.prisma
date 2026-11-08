@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  resultImports ResultImportBatch[]
   nsuhwExportsAuthored NsuhwExportBatch[] @relation("NsuhwExportAuthor")
   nsuhwExportsConfirmed NsuhwExportBatch[] @relation("NsuhwExportConfirmer")
   nsuhwAccountsConfirmed PreparedExternalAccount[] @relation("NsuhwAccountConfirmer")
@@ -91,6 +92,9 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  resultImports ResultImportBatch[]
+  resultProblems EditionProblem[]
+  individualResults IndividualResult[]
   nsuhwExports NsuhwExportBatch[]
   nsuhwAccountsConfirmed PreparedExternalAccount[]
   legacyNsuhwApprovals LegacyNsuhwClaim[]
@@ -261,6 +265,7 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  individualResults IndividualResult[]
   notificationJobs OutboxJob[]
   teamInvitations TeamInvitation[]
   captainTransfers CaptainTransfer[]
@@ -524,4 +529,64 @@ model NsuhwExportBatch {
   actor User @relation("NsuhwExportAuthor", fields: [actorId], references: [id], onDelete: Restrict)
   confirmedBy User? @relation("NsuhwExportConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict)
   @@index([editionId, createdAt])
+}
+
+
+enum ResultKind {
+  PRELIMINARY
+  FINAL
+}
+
+model ResultImportBatch {
+  id String @id @db.Uuid
+  editionId String @db.Uuid
+  actorId String @db.Uuid
+  kind ResultKind
+  sourceHash String @db.Char(64)
+  importedCount Int
+  rejectedCount Int
+  report Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  results IndividualResult[]
+  @@unique([id, editionId, kind])
+  @@index([editionId, createdAt])
+}
+
+model EditionProblem {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  ordinal Int
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  scores ResultProblemScore[]
+  @@unique([editionId, ordinal])
+  @@unique([id, editionId])
+}
+
+model IndividualResult {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  participationId String @db.Uuid
+  batchId String @db.Uuid
+  kind ResultKind
+  total Int?
+  prize String? @db.VarChar(200)
+  participation Participation @relation(fields: [participationId, editionId], references: [id, editionId], onDelete: Restrict)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  batch ResultImportBatch @relation(fields: [batchId, editionId, kind], references: [id, editionId, kind], onDelete: Restrict)
+  scores ResultProblemScore[]
+  @@unique([participationId, kind])
+  @@unique([id, editionId])
+  @@index([editionId, kind])
+}
+
+model ResultProblemScore {
+  resultId String @db.Uuid
+  problemId String @db.Uuid
+  editionId String @db.Uuid
+  score Int?
+  result IndividualResult @relation(fields: [resultId, editionId], references: [id, editionId], onDelete: Restrict)
+  problem EditionProblem @relation(fields: [problemId, editionId], references: [id, editionId], onDelete: Restrict)
+  @@id([resultId, problemId])
 }

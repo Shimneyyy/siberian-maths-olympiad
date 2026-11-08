@@ -10,13 +10,13 @@ import { InvalidMailTemplate } from "./mail-template";
 import { AdminRateLimit } from "./admin";
 import { Prisma } from "@prisma/client";
 const headers = { "Cache-Control": "private, no-store" };
-export async function olympiadRequest(request: Request, operation: (actorId: string, body: unknown) => Promise<unknown>) {
+export async function olympiadRequest(request: Request, operation: (actorId: string, body: unknown) => Promise<unknown>, bodyLimit = 16384) {
   if (request.method !== "GET" && request.headers.get("origin") !== new URL(process.env.BETTER_AUTH_URL || "http://localhost:3000").origin) return Response.json({ error: "Недопустимый источник запроса" }, { status: 403, headers });
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user.emailVerified) return Response.json({ error: "Необходим вход" }, { status: 401, headers });
   let body: unknown;
   try {
-    if (request.method !== "GET") body = (await readJsonBody(request)).value;
+    if (request.method !== "GET") body = (await readJsonBody(request, bodyLimit)).value;
     const result = await operation(session.user.id, body);
     if (result instanceof Response) return result;
     return Response.json(result, { headers });

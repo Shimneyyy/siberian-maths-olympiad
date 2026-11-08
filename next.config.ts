@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
   poweredByHeader: false,
+  // Runtime secrets must never be copied into a distributable server bundle.
+  outputFileTracingExcludes: { "/*": ["./.local/**/*", "./.env", "./.env.*"] },
   // Each HTTP runner owns its generated outputs; never reuse a production/dev cache.
   distDir: process.env.SMO_TEST_DIST_DIR || ".next",
   // Reset links contain single-use tokens: never log URLs/arguments in development.
