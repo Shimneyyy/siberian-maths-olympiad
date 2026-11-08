@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  resultPublications ResultPublication[]
   resultImports ResultImportBatch[]
   nsuhwExportsAuthored NsuhwExportBatch[] @relation("NsuhwExportAuthor")
   nsuhwExportsConfirmed NsuhwExportBatch[] @relation("NsuhwExportConfirmer")
@@ -395,6 +396,7 @@ enum OutboxEventKind {
   MAIL_BATCH
   TRANSFER
   EXTERNAL_ACCOUNT_READY
+  RESULTS_PUBLISHED
 }
 enum OutboxJobStatus {
   READY
@@ -538,6 +540,7 @@ enum ResultKind {
 }
 
 model ResultImportBatch {
+  publication ResultPublication?
   id String @id @db.Uuid
   editionId String @db.Uuid
   actorId String @db.Uuid
@@ -589,4 +592,12 @@ model ResultProblemScore {
   result IndividualResult @relation(fields: [resultId, editionId], references: [id, editionId], onDelete: Restrict)
   problem EditionProblem @relation(fields: [problemId, editionId], references: [id, editionId], onDelete: Restrict)
   @@id([resultId, problemId])
+}
+
+model ResultPublication {
+  batchId String @id @db.Uuid
+  actorId String @db.Uuid
+  publishedAt DateTime @default(now()) @db.Timestamptz(3)
+  batch ResultImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
 }

@@ -5,7 +5,7 @@ import { AccessDenied, authorizeStaff } from "./access";
 import { OlympiadError } from "./olympiad-rules";
 import { assertDemoRegistration } from "./registration-rules";
 import { validateMailTemplate, renderMailTemplate } from "./mail-template";
-const eventSchema = z.object({ kind: z.enum(["ANNOUNCEMENT", "MAIL_BATCH", "TRANSFER", "EXTERNAL_ACCOUNT_READY"]), sourceId: z.uuid(), sourceRevision: z.int().nonnegative(),
+const eventSchema = z.object({ kind: z.enum(["ANNOUNCEMENT", "MAIL_BATCH", "TRANSFER", "EXTERNAL_ACCOUNT_READY", "RESULTS_PUBLISHED"]), sourceId: z.uuid(), sourceRevision: z.int().nonnegative(),
   editionId: z.uuid(), editionVenueId: z.uuid().nullable().default(null), subjectTemplate: z.string().min(1).max(200).refine(s => !/[\r\n]/.test(s)), bodyTemplate: z.string().min(1).max(5000) }).strict();
 // Called inside the domain transaction. actorId comes from the server session; targets from an authorized query.
 export async function enqueueEmail(tx: Prisma.TransactionClient, actorId: string, raw: unknown, participationIds: string[]) {

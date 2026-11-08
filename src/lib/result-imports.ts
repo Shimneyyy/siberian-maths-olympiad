@@ -101,15 +101,15 @@ export async function reviewResultImports(db: PrismaClient, actorId: string, raw
     if (!input.batchId) {
       const total = await tx.resultImportBatch.count({ where: { editionId: input.editionId } });
       const batches = await tx.resultImportBatch.findMany({ where: { editionId: input.editionId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (input.page - 1) * 25, take: 25,
-        select: { id: true, kind: true, createdAt: true, importedCount: true, rejectedCount: true } });
-      return { total, batches, results: [] };
+        select: { publication: { select: { publishedAt: true } }, id: true, kind: true, createdAt: true, importedCount: true, rejectedCount: true } });
+      return { total, batches, publication: null, results: [] };
     }
-    const batch = await tx.resultImportBatch.findFirst({ where: { id: input.batchId, editionId: input.editionId }, select: { id: true, kind: true } });
+    const batch = await tx.resultImportBatch.findFirst({ where: { id: input.batchId, editionId: input.editionId }, select: { id: true, kind: true, publication: { select: { publishedAt: true } } } });
     if (!batch) throw new AccessDenied("FORBIDDEN");
     const where = { batchId: batch.id, editionId: input.editionId };
     const total = await tx.individualResult.count({ where });
     const rows = await tx.individualResult.findMany({ where, orderBy: { id: "asc" }, skip: (input.page - 1) * 25, take: 25,
       select: { id: true, total: true, prize: true, participation: { select: { fullName: true } }, scores: { orderBy: { problem: { ordinal: "asc" } }, select: { score: true, problem: { select: { ordinal: true } } } } } });
-    return { total, batches: [], results: rows.map(r => ({ id: r.id, fullName: r.participation.fullName, total: r.total, prize: r.prize, scores: r.scores.map(s => ({ ordinal: s.problem.ordinal, score: s.score })) })) };
+    return { total, batches: [], publication: batch.publication, results: rows.map(r => ({ id: r.id, fullName: r.participation.fullName, total: r.total, prize: r.prize, scores: r.scores.map(s => ({ ordinal: s.problem.ordinal, score: s.score })) })) };
   }, { isolationLevel: "RepeatableRead" });
 }

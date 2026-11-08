@@ -135,3 +135,65 @@ test("E08a stored import review is paginated, chief-scoped and never exposes aut
   await db.editionStaffGrant.update({ where: { userId_editionId: { userId: f.chief.id, editionId: f.edition.id } }, data: { revokedAt: new Date() } });
   await assert.rejects(reviewResultImports(db, f.chief.id, input));
 });
+
+test("E08 publishes only selected batches atomically, retries deduplicate, final suppresses only its owner's preliminary", async () => {
+  const { publishResults, resultsView } = await import("../src/lib/results");
+  const f = await fixture(), [a,b] = f.people;
+  const first = await applyResultImport(db, f.chief.id, await f.command([`${a.login},0,,7,Учебный приз`, `${b.login},1,2,3,`]));
+  const read = (actorId: string) => resultsView(db, actorId, { editionId: f.edition.id });
+  assert.equal((await read(a.user.id)).total, 0);
+  const command = { editionId: f.edition.id, batchId: first.id, password, confirmed: true };
+  await Promise.all([publishResults(db, f.chief.id, command), publishResults(db, f.chief.id, command)]);
+  assert.equal((await read(a.user.id)).rows[0].kind, "PRELIMINARY");
+  assert.deepEqual((await read(a.user.id)).rows[0].scores.map(s => s.score), [0,null]);
+  assert.equal((await read(a.user.id)).total,1); assert.equal((await read(f.chief.id)).total,2);
+  assert.equal(await db.outboxJob.count({where:{editionId:f.edition.id}}),2);
+  const input = {...f.input([`${a.login},3,4,7,Итоговый приз`]),kind:"FINAL"};
+  const preview=await previewResultImport(db,f.chief.id,input);
+  const final=await applyResultImport(db,f.chief.id,{...input,id:randomUUID(),selectionHash:preview.selectionHash,password,confirmed:true});
+  assert.equal((await read(a.user.id)).rows[0].kind,"PRELIMINARY");
+  await publishResults(db,f.chief.id,{...command,batchId:final.id});
+  assert.deepEqual((await read(a.user.id)).rows.map(r=>r.kind),["FINAL"]);
+  assert.deepEqual((await read(b.user.id)).rows.map(r=>r.kind),["PRELIMINARY"]);
+  assert.equal(await db.auditEvent.count({where:{editionId:f.edition.id,action:"RESULTS_PUBLISHED"}}),2);
+  assert.equal(await db.outboxJob.count({where:{editionId:f.edition.id}}),3);
+  await assert.rejects(db.resultPublication.delete({where:{batchId:first.id}}));
+});
+test("E08 scopes reads to own results or assigned venues and rejects spoofing, MFA bypass, foreign years and revoked grants", async () => {
+  const { publishResults, resultsView } = await import("../src/lib/results");
+  const f=await fixture(),a=f.people[0];
+  const venue=await db.editionVenue.create({data:{edition:{connect:{id:f.edition.id}},address:"Учебный адрес",venue:{create:{name:"Учебная площадка"}}}});
+  await db.participation.update({where:{id:a.p.id},data:{format:"ONSITE",remoteZone:null,editionVenueId:venue.id}});
+  const batch=await applyResultImport(db,f.chief.id,await f.command(f.people.slice(0,2).map(p=>`${p.login},1,2,3,`)));
+  const command={editionId:f.edition.id,batchId:batch.id,password,confirmed:true};
+  await assert.rejects(publishResults(db,a.user.id,command));
+  await assert.rejects(publishResults(db,f.chief.id,{...command,confirmed:false}));
+  await assert.rejects(publishResults(db,f.chief.id,{...command,password:"wrong"}));
+  await assert.rejects(publishResults(db,f.chief.id,{...command,editionId:f.foreign.id}));
+  await assert.rejects(resultsView(db,a.user.id,{editionId:f.edition.id,userId:f.people[1].user.id}));
+  await publishResults(db,f.chief.id,command);
+  const staff=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный площадочный",role:"VENUE_ORGANIZER",emailVerified:true,twoFactorEnabled:true}});
+  await db.venueStaffAssignment.create({data:{userId:staff.id,editionId:f.edition.id,editionVenueId:venue.id}});
+  const input={editionId:f.edition.id};
+  assert.equal((await resultsView(db,staff.id,input)).total,1);
+  await assert.rejects(publishResults(db,staff.id,command));
+  await db.user.update({where:{id:staff.id},data:{twoFactorEnabled:false}});await assert.rejects(resultsView(db,staff.id,input));
+  await db.user.update({where:{id:staff.id},data:{twoFactorEnabled:true}});
+  await db.venueStaffAssignment.update({where:{userId_editionVenueId:{userId:staff.id,editionVenueId:venue.id}},data:{revokedAt:new Date()}});
+  await assert.rejects(resultsView(db,staff.id,input));
+  await db.editionStaffGrant.update({where:{userId_editionId:{userId:f.chief.id,editionId:f.edition.id}},data:{revokedAt:new Date()}});
+  await assert.rejects(resultsView(db,f.chief.id,input));await assert.rejects(publishResults(db,f.chief.id,command));
+});
+test("E08 outbox or audit failure rolls publication back without exposing scores", async () => {
+  const { publishResults, resultsView } = await import("../src/lib/results");
+  const f=await fixture(),a=f.people[0],batch=await applyResultImport(db,f.chief.id,await f.command([`${a.login},1,2,3,`]));
+  for(const broken of [
+    db.$extends({query:{outboxEvent:{async create(){throw new Error("Synthetic failure");}}}}),
+    db.$extends({query:{auditEvent:{async create(){throw new Error("Synthetic failure");}}}}),
+  ]){
+    await assert.rejects(publishResults(broken as unknown as PrismaClient,f.chief.id,{editionId:f.edition.id,batchId:batch.id,password,confirmed:true}));
+    assert.equal(await db.resultPublication.count({where:{batchId:batch.id}}),0);
+    assert.equal((await resultsView(db,a.user.id,{editionId:f.edition.id})).total,0);
+    assert.equal(await db.outboxEvent.count({where:{editionId:f.edition.id}}),0);
+  }
+});
