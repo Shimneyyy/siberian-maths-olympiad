@@ -6,7 +6,13 @@ import { assertNoLegacyNsuhwClaim } from "./legacy-nsuhw";
 import { nsuhwLoginNamesSchema, nsuhwLoginPreview } from "./nsuhw-login-name-rules";
 import { OlympiadError } from "./olympiad-rules";
 async function student(db:PrismaClient,actorId:string){const user=await db.user.findUnique({where:{id:actorId}});if(!user?.emailVerified||user.role!=="STUDENT")throw new AccessDenied("FORBIDDEN");return user;}
-export async function nsuhwLoginNamesView(db:PrismaClient,actorId:string){await student(db,actorId);const draft=await db.nsuhwLoginName.findUnique({where:{userId:actorId},select:{firstNameLatin:true,lastNameLatin:true,revision:true}});return draft?{...draft,preview:nsuhwLoginPreview({firstNameLatin:draft.firstNameLatin,lastNameLatin:draft.lastNameLatin})}:null;}
+export async function nsuhwLoginNamesView(db:PrismaClient,actorId:string){
+ await student(db,actorId);
+ const draft=await db.nsuhwLoginName.findUnique({where:{userId:actorId},select:{firstNameLatin:true,lastNameLatin:true,revision:true}});
+ const prepared=await db.preparedExternalAccount.findUnique({where:{userId:actorId},select:{login:true}});
+ if(!draft&&!prepared)return null;
+ return {firstNameLatin:draft?.firstNameLatin??"",lastNameLatin:draft?.lastNameLatin??"",revision:draft?.revision??0,preview:draft?nsuhwLoginPreview({firstNameLatin:draft.firstNameLatin,lastNameLatin:draft.lastNameLatin}):null,preparedLogin:prepared?.login??null};
+}
 export async function saveNsuhwLoginNames(db:PrismaClient,actorId:string,raw:unknown){
  const input=nsuhwLoginNamesSchema.extend({revision:z.int().nonnegative()}).strict().parse(raw);
  assertDemoRegistration((await student(db,actorId)).email);

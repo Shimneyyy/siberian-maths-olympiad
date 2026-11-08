@@ -60,7 +60,7 @@ export async function approveLegacyNsuhw(db: PrismaClient, actorId: string, raw:
     const claim = await tx.legacyNsuhwClaim.findFirst({where:{id:input.claimId,user:{role:"STUDENT",emailVerified:true,participations:{some:{editionId:input.editionId}}}}});
     if(!claim) throw new AccessDenied("FORBIDDEN");
     await lockNsuhwNamespace(tx);
-    if(await tx.preparedExternalAccount.findFirst({where:{OR:[{login:claim.login},{userId:claim.userId}]},select:{id:true}}))throw new OlympiadError("CONFLICT","Обнаружен конфликт учётных данных; требуется сверка ответственным");
+    if(await tx.preparedExternalAccount.findFirst({where:{OR:[{login:{equals:claim.login,mode:"insensitive"}},{userId:claim.userId}]},select:{id:true}}))throw new OlympiadError("CONFLICT","Обнаружен конфликт учётных данных; требуется сверка ответственным");
     if(claim.approvedAt) return {id:claim.id,approvedAt:claim.approvedAt};
     if(claim.revision !== input.revision) throw new OlympiadError("CONFLICT","Заявка уже изменилась. Обновите список");
     const updated = await tx.legacyNsuhwClaim.update({where:{id:claim.id},data:{approvedAt:new Date(),approvedById:actorId,approvedEditionId:input.editionId,revision:{increment:1}},select:{id:true,approvedAt:true}});

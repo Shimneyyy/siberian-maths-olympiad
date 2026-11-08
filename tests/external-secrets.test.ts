@@ -104,3 +104,42 @@ test("missing keyring cannot be silently replaced while encrypted records exist"
  try{assert.ok(await db.preparedExternalAccount.count());await assert.rejects(initializeDemoKeyringForDatabase(db));await assert.rejects(stat(process.env.NSUHW_KEYRING_FILE),e=>(e as NodeJS.ErrnoException).code==="ENOENT");}
  finally{if(old===undefined)delete process.env.NSUHW_KEYRING_FILE;else process.env.NSUHW_KEYRING_FILE=old;await rm(dir,{recursive:true,force:true});}
 });
+test("E04 concurrent allocations skip known legacy names and produce independent encrypted passwords",async()=>{
+ const {prepareNsuhwInTransaction}=await import("../src/lib/prepare-nsuhw");
+ const legacy=await student();await submitLegacyNsuhw(db,legacy.id,{login:"SMC.I.PETROV",confirmed:true});
+ const owners=await Promise.all(Array.from({length:5},()=>student()));
+ for(const owner of owners)await db.nsuhwLoginName.create({data:{userId:owner.id,firstNameLatin:"Ivan",lastNameLatin:"Petrov"}});
+ const records=await Promise.all(owners.map(owner=>db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider()))));
+ assert.deepEqual(new Set(records.map(r=>r.login)),new Set([2,3,4,5,6].map(i=>`smc.i.petrov${i}`)));
+ const passwords=[];
+ for(const record of records){const row=await db.preparedExternalAccount.findUniqueOrThrow({where:{id:record.id}});const value=await openExternalPassword(row.secretEnvelope,externalSecretContext(row),provider());assert.match(value,/^[A-Za-z0-9]{24}$/);assert.ok(/[a-z]/.test(value)&&/[A-Z]/.test(value)&&/[0-9]/.test(value));passwords.push(value);assert.ok(!JSON.stringify(record).includes(value));}
+ assert.equal(new Set(passwords).size,5);
+});
+test("E04 same-owner retries preserve login/password and stale names or legacy declarations cannot create a replacement",async()=>{
+ const {prepareNsuhwInTransaction,preparedNsuhwView}=await import("../src/lib/prepare-nsuhw");
+ const owner=await student();await db.nsuhwLoginName.create({data:{userId:owner.id,firstNameLatin:"Anna",lastNameLatin:"Synthetic"}});
+ await assert.rejects(db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider(),99)));
+ const [a,b]=await Promise.all([db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider(),0)),db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider(),0))]);
+ assert.equal(a.id,b.id);const before=await db.preparedExternalAccount.findUniqueOrThrow({where:{id:a.id}});
+ await db.user.update({where:{id:owner.id},data:{name:"Другое учебное ФИО"}});
+ assert.equal((await db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider()))).login,a.login);
+ assert.deepEqual(await db.preparedExternalAccount.findUniqueOrThrow({where:{id:a.id}}),before);
+ assert.ok(!JSON.stringify(await preparedNsuhwView(db,owner.id)).includes("secretEnvelope"));
+ await assert.rejects(saveNsuhwLoginNames(db,owner.id,{firstNameLatin:"Other",lastNameLatin:"Name",revision:0}));
+ const old=await student();await submitLegacyNsuhw(db,old.id,{login:"legacy.no.regeneration",confirmed:true});
+ await assert.rejects(db.$transaction(tx=>prepareNsuhwInTransaction(tx,old.id,provider())));
+ assert.equal(await db.preparedExternalAccount.count({where:{userId:old.id}}),0);
+ assert.equal(await db.auditEvent.count({where:{objectId:a.id,action:"NSUHW_ACCOUNT_PREPARED"}}),1);
+});
+test("E04 missing name/key failure rolls back and preparation never changes email verification or role",async()=>{
+ const {prepareNsuhwInTransaction,preparedNsuhwView}=await import("../src/lib/prepare-nsuhw");
+ const owner=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебная неподтверждённая регистрация"}});
+ await assert.rejects(db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider())));
+ await db.nsuhwLoginName.create({data:{userId:owner.id,firstNameLatin:"Test",lastNameLatin:"Unverified"}});
+ const broken={activeVersion:"v1",async wrapKey():Promise<never>{throw new Error("Synthetic key outage");},async unwrapKey():Promise<never>{throw new Error("Synthetic key outage");}};
+ await assert.rejects(db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,broken)));
+ assert.equal(await db.preparedExternalAccount.count({where:{userId:owner.id}}),0);
+ await db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider()));
+ const after=await db.user.findUniqueOrThrow({where:{id:owner.id}});assert.equal(after.emailVerified,false);assert.equal(after.role,"STUDENT");
+ await assert.rejects(preparedNsuhwView(db,owner.id));
+});

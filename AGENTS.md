@@ -130,3 +130,10 @@ E01: внешние пароли — только envelope AES-256-GCM, отде
 реального KMS-backend пока нет. Не выводить plaintext/envelope/ключи в DTO/логи.
 PreparedExternalAccount — кандидат, не активный аккаунт nsuhw. Namespace-lock общий
 с legacy (User перед namespace); не захватывать чужой User под namespace-lock.
+
+E04: prepareNsuhwInTransaction готовит один неизменный кандидат на пользователя.
+Signup выполняет это в своей транзакции; legacy-ветка никогда не генерирует замену.
+Namespace включает известные pending/approved legacy и PreparedExternalAccount;
+ни метаданные, ни UI не означают готовность на nsuhw. Публичный API — только свои
+метаданные, без secretEnvelope/ключей/пароля. E05/E06: после ручной загрузки таблицы
+главный должен подтвердить успех, только затем доступно раскрытие участнику.

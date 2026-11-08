@@ -19,7 +19,7 @@ export async function storePreparedExternalAccount(tx:Prisma.TransactionClient,u
  if(user.role!=="STUDENT")throw new AccessDenied("FORBIDDEN");assertDemoRegistration(user.email);
  await assertNoLegacyNsuhwClaim(tx,userId);
  await lockNsuhwNamespace(tx);
- if(await tx.legacyNsuhwClaim.findFirst({where:{login:checkedLogin},select:{id:true}}))throw new OlympiadError("CONFLICT","Логин указан в заявке на старый аккаунт; выберите другой кандидат");
+ if(await tx.legacyNsuhwClaim.findFirst({where:{login:{equals:checkedLogin,mode:"insensitive"}},select:{id:true}}))throw new OlympiadError("CONFLICT","Логин указан в заявке на старый аккаунт; выберите другой кандидат");
  const data={id:randomUUID(),userId,login:checkedLogin,credentialVersion:1};
  const secretEnvelope=await sealExternalPassword(password,externalSecretContext(data),protector);
  const account=await tx.preparedExternalAccount.create({data:{...data,keyVersion:secretEnvelope.keyVersion,secretEnvelope},select:{id:true,login:true,revision:true}});
