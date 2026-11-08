@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { auth } from "@/lib/auth";
 import { createAuth, type Mail } from "@/lib/auth-core";
 import { db } from "@/lib/db";
+import { submitLegacyNsuhwInTransaction } from "@/lib/legacy-nsuhw";
 import { sendMail } from "@/lib/mail";
 import { registrationSchema, DEMO_CONSENT_TEXT, DEMO_CONSENT_VERSION } from "@/lib/registration-rules";
 
@@ -43,6 +44,7 @@ async function handle(request: Request) {
       if (!user) return result; // Rate-limit / generic library responses cannot create a profile.
       await tx.studentProfile.create({ data: { userId: user.id, fullName: parsed.data.name, universityId: parsed.data.universityId, courseId: parsed.data.courseId } });
       await tx.consentRecord.create({ data: { userId: user.id, purpose: "synthetic-demo-only", textVersion: DEMO_CONSENT_VERSION, textHash: createHash("sha256").update(DEMO_CONSENT_TEXT).digest("hex") } });
+      if (parsed.data.legacyNsuhwLogin) await submitLegacyNsuhwInTransaction(tx, user.id, parsed.data.legacyNsuhwLogin);
       await tx.auditEvent.create({ data: { actorId: user.id, action: "ACCOUNT_REGISTERED", objectType: "User", objectId: user.id, outcome: "SUCCESS" } });
       return result;
     }, { timeout: 15000 });

@@ -1,0 +1,93 @@
+import "dotenv/config";
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Client } from "pg";
+import { randomUUID } from "node:crypto";
+import { readdir,readFile } from "node:fs/promises";
+import { before,after,test } from "node:test";
+import assert from "node:assert/strict";
+import { hashPassword } from "better-auth/crypto";
+import { submitLegacyNsuhw,approveLegacyNsuhw,legacyNsuhwReviewList,legacyNsuhwView,assertNoLegacyNsuhwClaim,submitLegacyNsuhwInTransaction } from "../src/lib/legacy-nsuhw";
+process.env.DEMO_REGISTRATION="true";
+const schema=`legacy_${randomUUID().replaceAll("-","")}`,connection=process.env.DATABASE_URL!;
+const sql=new Client({connectionString:connection});
+const db=new PrismaClient({adapter:new PrismaPg({connectionString:connection,options:`-c search_path=${schema}`},{schema})});
+const password=`Synthetic-${randomUUID()}`;
+let chief:string,student:string,second:string,edition:string,foreign:string;
+before(async()=>{
+ await sql.connect();await sql.query(`CREATE SCHEMA "${schema}"`);await sql.query(`SET search_path TO "${schema}"`);
+ for(const m of (await readdir("prisma/migrations")).filter(x=>/^\d/.test(x)).sort())await sql.query(await readFile(`prisma/migrations/${m}/migration.sql`,"utf8"));
+ const create=async(role:"STUDENT"|"CHIEF_ORGANIZER")=>db.user.create({data:{name:"Учебный аккаунт",email:`${randomUUID()}@example.test`,role,emailVerified:true,twoFactorEnabled:role!=="STUDENT"}});
+ chief=(await create("CHIEF_ORGANIZER")).id;student=(await create("STUDENT")).id;second=(await create("STUDENT")).id;
+ edition=(await db.olympiadEdition.create({data:{year:8200,title:"Учебная сверка"}})).id;
+ foreign=(await db.olympiadEdition.create({data:{year:8201,title:"Другой год"}})).id;
+ await db.editionStaffGrant.create({data:{userId:chief,editionId:edition}});
+ await db.account.create({data:{userId:chief,accountId:chief,providerId:"credential",password:await hashPassword(password)}});
+ const uni=await db.university.create({data:{name:"Учебный вуз",abbreviation:"УВ"}}),course=await db.courseOption.create({data:{label:"Учебный курс"}});
+ for(const userId of [student,second]){
+  const consent=await db.consentRecord.create({data:{userId,purpose:"synthetic-demo-only",textVersion:"demo",textHash:"a".repeat(64)}});
+  await db.participation.create({data:{userId,editionId:edition,format:"REMOTE",remoteZone:"NSK",fullName:"Учебный участник",universityId:uni.id,universityName:uni.name,universityAbbreviation:uni.abbreviation,courseId:course.id,courseLabel:course.label,consentId:consent.id}});
+ }
+});
+after(async()=>{await db.$disconnect();await sql.query('SET search_path TO public');await sql.query(`DROP SCHEMA "${schema}" CASCADE`);await sql.end();});
+test("student declaration is private, repeatable, not ownership proof and blocks replacement generation",async()=>{
+ await assertNoLegacyNsuhwClaim(db,student);
+ const input={login:"legacy.synthetic",confirmed:true};
+ const [a,b]=await Promise.all([submitLegacyNsuhw(db,student,input),submitLegacyNsuhw(db,student,input)]);
+ assert.equal(a.id,b.id);assert.equal(a.approvedAt,null);
+ await assert.rejects(assertNoLegacyNsuhwClaim(db,student));
+ assert.equal(await legacyNsuhwView(db,second),null);
+ await assert.rejects(submitLegacyNsuhw(db,student,{...input,userId:second}));
+ await assert.rejects(submitLegacyNsuhw(db,student,{...input,login:"different"}));
+ await assert.rejects(submitLegacyNsuhw(db,student,{...input,confirmed:false}));
+ await assert.rejects(submitLegacyNsuhw(db,chief,input));
+ assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_CLAIM_SUBMITTED",objectId:a.id}}),1);
+});
+test("chief confirms after external verification, retries are idempotent and link survives another annual participation",async()=>{
+ await db.rateLimit.deleteMany();const claim=await legacyNsuhwView(db,student);assert.ok(claim);
+ const input={editionId:edition,claimId:claim.id,revision:claim.revision,ownershipChecked:true,confirmed:true,password};
+ await assert.rejects(approveLegacyNsuhw(db,chief,{...input,ownershipChecked:false}));
+ await assert.rejects(approveLegacyNsuhw(db,chief,{...input,confirmed:false}));
+ await assert.rejects(approveLegacyNsuhw(db,chief,{...input,revision:99}));
+ const results=await Promise.all([approveLegacyNsuhw(db,chief,input),approveLegacyNsuhw(db,chief,input)]);
+ assert.equal(results[0].id,results[1].id);assert.ok(results[0].approvedAt);
+ await assert.rejects(assertNoLegacyNsuhwClaim(db,student));
+ const p=await db.participation.findUniqueOrThrow({where:{userId_editionId:{userId:student,editionId:edition}}});
+ const {id: _id,createdAt: _time,...data}=p;void _id;void _time;
+ await db.participation.create({data:{...data,editionId:foreign}});
+ assert.equal((await legacyNsuhwView(db,student))?.id,claim.id);
+ assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_LINK_CONFIRMED",objectId:claim.id}}),1);
+});
+test("duplicate pending logins reveal no link, but one external login cannot be approved for two users",async()=>{
+ await db.rateLimit.deleteMany();const claim=await submitLegacyNsuhw(db,second,{login:"legacy.synthetic",confirmed:true});
+ assert.equal(claim.approvedAt,null);
+ await assert.rejects(approveLegacyNsuhw(db,chief,{editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password}));
+ assert.equal((await legacyNsuhwView(db,second))?.approvedAt,null);
+});
+test("year scope, role, email, MFA, password and revocation protect moderation; audit contains no login",async()=>{
+ await db.rateLimit.deleteMany();const claim=await legacyNsuhwView(db,second);assert.ok(claim);
+ const input={editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password};
+ await assert.rejects(legacyNsuhwReviewList(db,student,{editionId:edition}));
+ await assert.rejects(legacyNsuhwReviewList(db,chief,{editionId:foreign}));
+ await assert.rejects(approveLegacyNsuhw(db,student,input));
+ await assert.rejects(approveLegacyNsuhw(db,chief,{...input,password:"wrong"}));
+ await db.user.update({where:{id:chief},data:{twoFactorEnabled:false}});
+ await assert.rejects(approveLegacyNsuhw(db,chief,input));
+ await db.user.update({where:{id:chief},data:{twoFactorEnabled:true}});
+ await db.user.update({where:{id:second},data:{emailVerified:false}});
+ assert.ok(!(await legacyNsuhwReviewList(db,chief,{editionId:edition})).some(x=>x.id===claim.id));
+ await assert.rejects(approveLegacyNsuhw(db,chief,input));
+ await db.user.update({where:{id:second},data:{emailVerified:true}});
+ await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief,editionId:edition}},data:{revokedAt:new Date()}});
+ await assert.rejects(approveLegacyNsuhw(db,chief,input));
+ assert.ok(!JSON.stringify(await db.auditEvent.findMany()).includes("legacy.synthetic"));
+ await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief,editionId:edition}},data:{revokedAt:null}});
+});
+test("signup declaration rolls back with account transaction and does not require an email proof prematurely",async()=>{
+ const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебная регистрация"}});
+ await assert.rejects(db.$transaction(async tx=>{await submitLegacyNsuhwInTransaction(tx,user.id,"legacy.rollback");throw new Error("Synthetic signup rollback");}));
+ assert.equal(await db.legacyNsuhwClaim.count({where:{userId:user.id}}),0);
+ await db.$transaction(tx=>submitLegacyNsuhwInTransaction(tx,user.id,"legacy.unverified"));
+ await assert.rejects(legacyNsuhwView(db,user.id));
+ await assert.rejects(assertNoLegacyNsuhwClaim(db,user.id));
+});

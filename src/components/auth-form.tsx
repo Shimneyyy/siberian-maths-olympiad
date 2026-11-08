@@ -23,6 +23,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     try {
       if (mode === "register") {
         const response = await fetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          ...((data.get("legacyLogin") || data.get("legacyConfirmed") === "on") ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : {}),
           name: data.get("name"), email, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
         }) });
         if (!response.ok) throw new Error("Проверьте поля. Регистрация доступна только в учебном режиме с email @example.test.");
@@ -72,6 +73,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
       {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
       {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : 12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} /><span className="text-xs text-slate-600">Для нового пароля — не менее 12 символов.</span></label>}
       {["verify", "two-factor"].includes(mode) && <label className="block">Код {mode === "verify" ? "из письма" : "из приложения-аутентификатора"}<input name="code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} className={field} /></label>}
+      {mode === "register" && <fieldset className="space-y-3 rounded border p-3"><legend>Если у вас уже есть аккаунт nsuhw</legend><label className="block">Старый логин nsuhw (необязательно)<input name="legacyLogin" maxLength={254} className={field} autoComplete="off" /></label><label className="flex gap-3 text-sm"><input type="checkbox" name="legacyConfirmed" />Прошу главного организатора проверить и привязать этот логин. До проверки новые данные nsuhw мне не генерируются.</label><p className="text-sm">Пароль nsuhw не вводите. Новый аккаунт ЛК не подтверждает владение указанным логином.</p></fieldset>}
       {mode === "register" && <label className="flex gap-3 text-sm leading-6"><input name="demoConsent" type="checkbox" required className="mt-1 size-5 shrink-0" />Использую только вымышленные данные. Это учебная заглушка, а не юридическое согласие на обработку реальных ПДн.</label>}
       <Button disabled={busy} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
       {message && <p role="status" className="rounded-lg border border-border bg-white p-4 text-sm">{message}</p>}

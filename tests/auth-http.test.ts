@@ -53,7 +53,7 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
   const replacement = `Replacement-${randomUUID()}`;
   const university = await db.university.findFirstOrThrow({ where: { active: true } });
   const course = await db.courseOption.findFirstOrThrow({ where: { active: true } });
-  const registration = { email, password, name: "Синтетический участник", universityId: university.id, courseId: course.id, demoConsent: true, role: "TECHNICAL_ADMIN" };
+  const registration = { legacyNsuhwLogin: `legacy-${randomUUID()}`, legacyNsuhwClaimConfirmed: true, email, password, name: "Синтетический участник", universityId: university.id, courseId: course.id, demoConsent: true, role: "TECHNICAL_ADMIN" };
   // Dedicated local fixture environment only: remove rate-limit fixtures before exercising flows.
   await db.rateLimit.deleteMany();
   try {
@@ -62,10 +62,14 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
     assert.equal((await request("/api/auth/sign-up/email", registration, false, "https://untrusted.invalid")).status, 403);
     assert.equal((await request("/api/auth/sign-up/email", { ...registration, demoConsent: false })).status, 400);
     assert.equal(await db.user.findUnique({ where: { email } }), null);
+    assert.equal((await request("/api/auth/sign-up/email", { ...registration, legacyNsuhwLogin: "", legacyNsuhwClaimConfirmed: true })).status, 400);
+    assert.equal(await db.user.findUnique({where:{email}}),null);
     const signup = await request("/api/auth/sign-up/email", registration);
     assert.equal(signup.status, 200, "Synthetic registration should succeed");
     const user = await db.user.findUniqueOrThrow({ where: { email }, include: { profile: true, consents: true, accounts: true } });
     assert.equal(user.role, "STUDENT");
+    const legacy = await db.legacyNsuhwClaim.findUniqueOrThrow({where:{userId:user.id}});
+    assert.equal(legacy.login,registration.legacyNsuhwLogin); assert.equal(legacy.approvedAt,null);
     assert.equal(user.profile?.universityId, university.id);
     assert.equal(user.consents[0]?.purpose, "synthetic-demo-only");
     assert.notEqual(user.accounts[0]?.password, password);
@@ -121,6 +125,7 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
   } finally {
     const user = await db.user.findUnique({ where: { email } });
     if (user) {
+      await db.legacyNsuhwClaim.deleteMany({where:{userId:user.id}});
       await db.studentProfile.deleteMany({ where: { userId: user.id } });
       await db.consentRecord.deleteMany({ where: { userId: user.id } });
       await db.auditEvent.deleteMany({ where: { actorId: user.id } });

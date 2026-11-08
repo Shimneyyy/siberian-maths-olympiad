@@ -15,7 +15,7 @@ function totp(uri: string) {
   const digest = createHmac("sha1",key).update(counter).digest();
   return String((digest.readUInt32BE(digest[digest.length-1]&15)&0x7fffffff)%1000000).padStart(6,"0");
 }
-test("D04/D06/C11 browser, HTTP authorization and real SMTP", { timeout: 180000 }, async () => {
+test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", { timeout: 180000 }, async () => {
   const base = process.env.TEST_BASE_URL!;
   assert.ok(["localhost","127.0.0.1"].includes(new URL(base).hostname));
   assert.ok(new URL(process.env.DATABASE_URL!).pathname.startsWith("/smo_test_"));
@@ -125,6 +125,35 @@ test("D04/D06/C11 browser, HTTP authorization and real SMTP", { timeout: 180000 
     const transferText = await (await fetch(`http://127.0.0.1:8025/api/v1/message/${transferMail.ID}`)).json() as {Text:string};
     assert.ok(transferText.Text.includes(venueB.name)); assert.ok(!transferText.Text.includes(transferInput.reason));
 
+    await db.rateLimit.deleteMany();
+    await viewed.goto(`${base}/cabinet/nsuhw`);
+    await viewed.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await viewed.getByLabel("Старый логин nsuhw",{exact:true}).fill("legacy.browser.synthetic");
+    await viewed.getByLabel("Прошу проверить",{exact:false}).check();
+    await viewed.getByRole("button",{name:"Отправить на проверку",exact:true}).click();
+    await viewed.getByRole("status").filter({hasText:"Заявка ожидает"}).waitFor();
+    const legacy = await db.legacyNsuhwClaim.findUniqueOrThrow({where:{userId:reader.id}});
+    assert.equal(legacy.approvedAt,null);
+    const approve = {editionId:edition.id,claimId:legacy.id,revision:0,password,confirmed:true,ownershipChecked:true};
+    assert.equal((await post(recipient,"nsuhw/legacy/approve",approve)).status(),403);
+    assert.equal((await post(writer,"nsuhw/legacy/approve",{...approve,ownershipChecked:false})).status(),400);
+    assert.equal((await post(writer,"nsuhw/legacy/approve",{...approve,editionId:other.id})).status(),403);
+    assert.equal((await post(writer,"nsuhw/legacy/approve",approve,"https://untrusted.invalid")).status(),403);
+    await page.goto(`${base}/cabinet/nsuhw`);
+    await page.getByRole("button",{name:"Показать заявки",exact:true}).click();
+    await page.getByText("Логин nsuhw: legacy.browser.synthetic",{exact:true}).waitFor();
+    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
+    await page.getByLabel("Сверил принадлежность",{exact:false}).check();
+    await page.getByLabel("Подтверждаю привязку",{exact:false}).check();
+    await page.getByRole("button",{name:"Подтвердить привязку",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Привязка подтверждена"}).waitFor();
+    await viewed.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await viewed.getByText("Привязка подтверждена главным организатором",{exact:true}).waitFor();
+    const ownClaim = await recipient.request.get(`${base}/api/nsuhw/legacy`);
+    assert.ok(ownClaim.headers()["cache-control"].includes("no-store"));
+    assert.ok(!JSON.stringify(await ownClaim.json()).includes("approvedById"));
+    assert.equal(await db.legacyNsuhwClaim.count(),1);
+    assert.deepEqual(errors,[]);
     await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief.id,editionId:edition.id}},data:{revokedAt:new Date()}});
     assert.equal((await post(writer,"announcements/search",{editionId:edition.id})).status(),403);
     assert.equal((await post(recipient,"announcements/search",{editionId:other.id})).status(),403);
