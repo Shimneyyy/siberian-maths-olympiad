@@ -488,3 +488,9 @@ lint/typecheck/production build, 12 миграций, schema diff пуст.
 
 Финальные проверки AUTH01: 45/45 DB/service/CLI, 4/4 HTTP (включая Chromium),
 lint, typecheck и production build прошли. Сборка не является production-приёмкой.
+
+AUTH01 отправлена в work: e261ef9. Дополнительный test:live прошёл 1/1
+(две Chromium-сессии, TOTP, явка, offline/reconnect, отзыв, профиль/команды/отмена).
+Пользователь разрешил повторную D04 с нуля. План — D04_REIMPLEMENTATION.md;
+ожидается ответ о правках опубликованного текста и повторных уведомлениях.
+D04, D06 и C11 остаются незавершёнными.
