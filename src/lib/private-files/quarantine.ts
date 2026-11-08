@@ -74,4 +74,9 @@ export class DemoQuarantine {
     } catch { throw new QuarantineError(); }
     finally { await handle?.close().catch(() => {}); }
   }
+  async remove(key: string, expectedHash: string) {
+    await this.read(key, expectedHash);
+    try { await unlink(this.#path(key)); } catch { throw new QuarantineError(); }
+  }
+
 }

@@ -13,11 +13,13 @@ if (!process.env.BETTER_AUTH_SECRET) throw new Error("Configure BETTER_AUTH_SECR
 const env = { ...process.env, NODE_ENV: "development", DEMO_REGISTRATION: "true", BETTER_AUTH_URL: base, TEST_BASE_URL: base, NEXT_TELEMETRY_DISABLED: "1", SMO_TEST_DIST_DIR: ".next/test-runtime" };
 // Communications exercise immutable publications. Use a disposable local database,
 // then drop that database rather than bypassing publication protection to clean up.
-let control, disposable;
+let control, disposable, diplomaDirectory;
 if (target === "tests/communications-http.test.ts") {
   const url = new URL(env.DATABASE_URL);
   if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local synthetic database required");
   disposable = `smo_test_${randomUUID().replaceAll("-", "")}`;
+  diplomaDirectory = `.local/test-diplomas-${randomUUID().replaceAll("-", "")}`;
+  env.DIPLOMA_DIRECTORY = diplomaDirectory;
   control = new Client({ connectionString: env.DATABASE_URL }); await control.connect();
   await control.query(`CREATE DATABASE "${disposable}"`);
   url.pathname = `/${disposable}`; env.DATABASE_URL = url.toString();
@@ -56,4 +58,5 @@ try {
   if (control) {
     await control.query(`DROP DATABASE "${disposable}" WITH (FORCE)`); await control.end();
   }
+  if (diplomaDirectory) await rm(diplomaDirectory, { recursive: true, force: true });
 }

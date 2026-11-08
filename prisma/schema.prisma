@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  diplomaBatches DiplomaBatch[]
   resultPublications ResultPublication[]
   resultImports ResultImportBatch[]
   nsuhwExportsAuthored NsuhwExportBatch[] @relation("NsuhwExportAuthor")
@@ -93,6 +94,10 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  diplomaBatches DiplomaBatch[]
+  diplomaItems DiplomaItem[]
+  diplomaDocuments DiplomaDocument[]
+  diplomaVersions DiplomaVersion[]
   resultImports ResultImportBatch[]
   resultProblems EditionProblem[]
   individualResults IndividualResult[]
@@ -266,6 +271,8 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  diplomaItems DiplomaItem[]
+  diplomaDocuments DiplomaDocument[]
   individualResults IndividualResult[]
   notificationJobs OutboxJob[]
   teamInvitations TeamInvitation[]
@@ -397,6 +404,7 @@ enum OutboxEventKind {
   TRANSFER
   EXTERNAL_ACCOUNT_READY
   RESULTS_PUBLISHED
+  DIPLOMAS_PUBLISHED
 }
 enum OutboxJobStatus {
   READY
@@ -600,4 +608,66 @@ model ResultPublication {
   publishedAt DateTime @default(now()) @db.Timestamptz(3)
   batch ResultImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
   actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+}
+
+model DiplomaBatch {
+  id String @id @db.Uuid
+  editionId String @db.Uuid
+  actorId String @db.Uuid
+  archiveHash String @db.Char(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  appliedAt DateTime? @db.Timestamptz(3)
+  selectionHash String? @db.Char(64)
+  publishedAt DateTime? @db.Timestamptz(3)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  items DiplomaItem[]
+  @@unique([id, editionId])
+  @@index([editionId, createdAt])
+}
+model DiplomaItem {
+  id String @id @default(uuid()) @db.Uuid
+  batchId String @db.Uuid
+  editionId String @db.Uuid
+  ordinal Int
+  fileName String
+  participationId String? @db.Uuid
+  error String?
+  fileKey String? @db.Uuid
+  fileHash String? @db.Char(64)
+  size Int?
+  pages Int?
+  inspectedAt DateTime? @db.Timestamptz(3)
+  batch DiplomaBatch @relation(fields: [batchId, editionId], references: [id, editionId], onDelete: Restrict)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  participation Participation? @relation(fields: [participationId, editionId], references: [id, editionId], onDelete: Restrict)
+  version DiplomaVersion?
+  @@unique([batchId, ordinal])
+  @@unique([id, editionId])
+}
+model DiplomaDocument {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  participationId String @db.Uuid
+  revision Int @default(0)
+  currentVersionId String? @unique @db.Uuid
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  participation Participation @relation(fields: [participationId, editionId], references: [id, editionId], onDelete: Restrict)
+  versions DiplomaVersion[] @relation("DiplomaVersions")
+  @@unique([currentVersionId, id])
+  currentVersion DiplomaVersion? @relation("CurrentDiploma", fields: [currentVersionId, id], references: [id, documentId], onDelete: Restrict)
+  @@unique([id, editionId])
+}
+model DiplomaVersion {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  documentId String @db.Uuid
+  itemId String @unique @db.Uuid
+  baseRevision Int
+  document DiplomaDocument @relation("DiplomaVersions", fields: [documentId, editionId], references: [id, editionId], onDelete: Restrict)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  @@unique([itemId, editionId])
+  item DiplomaItem @relation(fields: [itemId, editionId], references: [id, editionId], onDelete: Restrict)
+  currentFor DiplomaDocument? @relation("CurrentDiploma")
+  @@unique([id, documentId])
 }
