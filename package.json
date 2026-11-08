@@ -17,7 +17,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "test:db": "tsx --test --test-concurrency=1 tests/quarantine.test.ts tests/result-imports.test.ts tests/nsuhw-delivery.test.ts tests/external-secrets.test.ts tests/legacy-nsuhw.test.ts tests/announcements.test.ts tests/outbox.test.ts tests/teams.test.ts tests/migration.test.ts tests/admin.test.ts tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts tests/olympiad.test.ts tests/registrations.test.ts",
+    "test:db": "tsx --test --test-concurrency=1 tests/zip-preview.test.ts tests/quarantine.test.ts tests/result-imports.test.ts tests/nsuhw-delivery.test.ts tests/external-secrets.test.ts tests/legacy-nsuhw.test.ts tests/announcements.test.ts tests/outbox.test.ts tests/teams.test.ts tests/migration.test.ts tests/admin.test.ts tests/database.test.ts tests/access.test.ts tests/staff.test.ts tests/bootstrap.test.ts tests/olympiad.test.ts tests/registrations.test.ts",
     "test:live": "node scripts/test-http.mjs tests/live.test.ts",
     "test:http": "node scripts/test-http.mjs",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
@@ -41,6 +41,7 @@
     "react-dom": "19.3.1",
     "server-only": "0.0.1",
     "tailwind-merge": "3.7.0",
+    "yauzl": "3.4.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -50,6 +51,8 @@
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
     "dotenv": "18.0.9",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.5",
@@ -57,6 +60,7 @@
     "prisma": "7.10.1",
     "tailwindcss": "4.3.4",
     "tsx": "4.23.15",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "yazl": "3.3.1"
   }
 }
