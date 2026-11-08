@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  preparedExternalAccount PreparedExternalAccount?
   nsuhwLoginName NsuhwLoginName?
   legacyNsuhwClaim LegacyNsuhwClaim? @relation("LegacyClaimOwner")
   legacyNsuhwApprovals LegacyNsuhwClaim[] @relation("LegacyClaimReviewer")
@@ -484,4 +485,18 @@ model NsuhwLoginName {
   lastNameLatin String @db.VarChar(80)
   revision Int @default(0)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model PreparedExternalAccount {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+  login String @unique @db.VarChar(254)
+  credentialVersion Int @default(1)
+  keyVersion String @db.VarChar(64)
+  secretEnvelope Json
+  revision Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([keyVersion])
 }

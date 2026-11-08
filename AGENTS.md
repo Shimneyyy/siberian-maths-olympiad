@@ -123,3 +123,10 @@ E04a: NsuhwLoginName — только отдельные компоненты б
 Preview не проверяет занятость и не резервирует имя. E04 обязана назначить уникальный
 финальный логин отдельно и заморозить его при последующих правках профиля/имён.
 User-lock общий с подачей legacy-заявки: при любой legacy-заявке новые поля не менять.
+
+E01: внешние пароли — только envelope AES-256-GCM, отдельный DEK и KEK; AAD включает
+аккаунт/владельца/логин/credentialVersion, не год. Не использовать BETTER_AUTH_SECRET.
+.local/ — ключевой материал, не Git. DemoLocalKeyProtector запрещён в production;
+реального KMS-backend пока нет. Не выводить plaintext/envelope/ключи в DTO/логи.
+PreparedExternalAccount — кандидат, не активный аккаунт nsuhw. Namespace-lock общий
+с legacy (User перед namespace); не захватывать чужой User под namespace-lock.

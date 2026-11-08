@@ -1,3 +1,4 @@
+import { lockNsuhwNamespace } from "./nsuhw-namespace";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { AccessDenied, authorizeStaff } from "./access";
@@ -23,6 +24,8 @@ export async function submitLegacyNsuhwInTransaction(tx: Prisma.TransactionClien
   if(user.role !== "STUDENT") throw new AccessDenied("FORBIDDEN");
   assertDemoRegistration(user.email);
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
+  await lockNsuhwNamespace(tx);
+  if(await tx.preparedExternalAccount.findUnique({where:{userId},select:{id:true}}))throw new OlympiadError("CONFLICT","Новые данные nsuhw уже подготовлены; обратитесь к главному организатору для сверки");
   const existing = await tx.legacyNsuhwClaim.findUnique({where:{userId},select:ownSelect});
   if(existing) {
     if(existing.login !== login) throw new OlympiadError("CONFLICT","Заявка уже существует. Обратитесь к главному организатору для сверки");
@@ -56,6 +59,8 @@ export async function approveLegacyNsuhw(db: PrismaClient, actorId: string, raw:
     await authorizeStaff(tx,actorId,"registrations:edit",input.editionId);
     const claim = await tx.legacyNsuhwClaim.findFirst({where:{id:input.claimId,user:{role:"STUDENT",emailVerified:true,participations:{some:{editionId:input.editionId}}}}});
     if(!claim) throw new AccessDenied("FORBIDDEN");
+    await lockNsuhwNamespace(tx);
+    if(await tx.preparedExternalAccount.findFirst({where:{OR:[{login:claim.login},{userId:claim.userId}]},select:{id:true}}))throw new OlympiadError("CONFLICT","Обнаружен конфликт учётных данных; требуется сверка ответственным");
     if(claim.approvedAt) return {id:claim.id,approvedAt:claim.approvedAt};
     if(claim.revision !== input.revision) throw new OlympiadError("CONFLICT","Заявка уже изменилась. Обновите список");
     const updated = await tx.legacyNsuhwClaim.update({where:{id:claim.id},data:{approvedAt:new Date(),approvedById:actorId,approvedEditionId:input.editionId,revision:{increment:1}},select:{id:true,approvedAt:true}});

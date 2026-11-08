@@ -14,6 +14,7 @@ export async function saveNsuhwLoginNames(db:PrismaClient,actorId:string,raw:unk
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${actorId}::uuid FOR UPDATE`;
   const actor=await tx.user.findUniqueOrThrow({where:{id:actorId}});if(!actor.emailVerified||actor.role!=="STUDENT")throw new AccessDenied("FORBIDDEN");
   await assertNoLegacyNsuhwClaim(tx,actorId);
+  if(await tx.preparedExternalAccount.findUnique({where:{userId:actorId},select:{id:true}}))throw new OlympiadError("CONFLICT","Логин nsuhw уже подготовлен; изменение имени не должно его переименовывать");
   const old=await tx.nsuhwLoginName.findUnique({where:{userId:actorId}});
   if((old?.revision??0)!==input.revision)throw new OlympiadError("CONFLICT","Данные уже изменены. Обновите форму.");
   const data={firstNameLatin:input.firstNameLatin,lastNameLatin:input.lastNameLatin,revision:input.revision+1};
