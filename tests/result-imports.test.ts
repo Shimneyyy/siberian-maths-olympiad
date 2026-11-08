@@ -8,7 +8,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "better-auth/crypto";
 import { parseResultCsv } from "../src/lib/result-csv";
-import { previewResultImport, applyResultImport, resultImportOptions } from "../src/lib/result-imports";
+import { previewResultImport, applyResultImport, resultImportOptions, reviewResultImports } from "../src/lib/result-imports";
 process.env.DEMO_REGISTRATION = "true";
 const schema = `results_${randomUUID().replaceAll("-", "")}`, connection = process.env.DATABASE_URL!;
 const sql = new Client({ connectionString: connection });
@@ -113,4 +113,25 @@ test("E07 audit failure rolls back every valid row and DB guards reject negative
   const p = await db.editionProblem.findFirstOrThrow({ where: { editionId: f.edition.id } });
   const another = await db.individualResult.create({ data: { editionId: f.edition.id, participationId: f.people[2].p.id, batchId: done.id, kind: "PRELIMINARY" } });
   await assert.rejects(db.resultProblemScore.create({ data: { resultId: another.id, editionId: f.edition.id, problemId: p.id, score: -1 } }));
+});
+
+test("E08a stored import review is paginated, chief-scoped and never exposes authentication or draft data to other roles", async () => {
+  const f = await fixture(), body = await f.command([`${f.people[0].login},0,,19,Учебный приз`]);
+  const done = await applyResultImport(db, f.chief.id, body);
+  const history = await reviewResultImports(db, f.chief.id, { editionId: f.edition.id });
+  assert.equal(history.total, 1); assert.equal(history.batches[0].id, done.id);
+  const input = { editionId: f.edition.id, batchId: done.id };
+  const review = await reviewResultImports(db, f.chief.id, input);
+  assert.equal(review.results[0].fullName, f.people[0].user.name); assert.equal(review.results[0].total, 19);
+  assert.deepEqual(review.results[0].scores.map(s => s.score), [0, null]);
+  for (const forbidden of ["email", "userId", "secretEnvelope", "sourceHash", "password", "login"]) assert.ok(!JSON.stringify(review).includes(`"${forbidden}"`));
+  assert.equal((await reviewResultImports(db, f.chief.id, { ...input, page: 2 })).results.length, 0);
+  await assert.rejects(reviewResultImports(db, f.people[0].user.id, input));
+  await assert.rejects(reviewResultImports(db, f.chief.id, { ...input, editionId: f.foreign.id }));
+  await assert.rejects(reviewResultImports(db, f.chief.id, { ...input, userId: f.chief.id }));
+  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: false } });
+  await assert.rejects(reviewResultImports(db, f.chief.id, input));
+  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: true } });
+  await db.editionStaffGrant.update({ where: { userId_editionId: { userId: f.chief.id, editionId: f.edition.id } }, data: { revokedAt: new Date() } });
+  await assert.rejects(reviewResultImports(db, f.chief.id, input));
 });

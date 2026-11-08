@@ -315,10 +315,18 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal(await db.individualResult.count(),1);
     assert.equal((await post(recipient,"results/import/apply",replay)).status(),403);
     assert.equal((await recipient.request.get(`${base}/api/results/import/preview`)).status(),405);
+    assert.equal((await post(recipient,"results/import/review",{editionId:edition.id,batchId:resultBatch.id})).status(),403);
+    assert.equal((await post(writer,"results/import/review",{editionId:other.id,batchId:resultBatch.id})).status(),403);
+    await page.getByRole("button",{name:"Показать сохранённые загрузки",exact:true}).click();
+    await page.getByRole("button",{name:"Проверить результаты этой загрузки",exact:true}).click();
+    const stored = page.getByRole("table").filter({has:page.getByText("Сохранённые личные результаты",{exact:true})});
+    await stored.getByText("Приз, учебный",{exact:true}).waitFor();
+    assert.ok((await stored.textContent())?.includes("1: 0 · 2: —"));
     await viewed.goto(`${base}/cabinet/results-import`);assert.equal(new URL(viewed.url()).pathname,"/cabinet");
     assert.ok(!(await viewed.content()).includes("Приз, учебный"));
     assert.equal(errors.length,0);
     await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief.id,editionId:edition.id}},data:{revokedAt:new Date()}});
+    assert.equal((await post(writer,"results/import/review",{editionId:edition.id})).status(),403);
     assert.equal((await post(writer,"results/import/preview",resultInput)).status(),403);
     assert.equal((await post(writer,"announcements/search",{editionId:edition.id})).status(),403);
     assert.equal((await post(recipient,"announcements/search",{editionId:other.id})).status(),403);
