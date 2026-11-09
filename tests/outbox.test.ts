@@ -20,7 +20,7 @@ async function fixture() {
     const site = await tx.editionVenue.create({ data: { venueId: venue.id, editionId: edition.id, address: "Учебный адрес" } });
     const secondVenue = await tx.venue.create({ data: { name: "Другая площадка очереди" } });
     const secondSite = await tx.editionVenue.create({ data: { venueId: secondVenue.id, editionId: edition.id, address: "Другой учебный адрес" } });
-    const chief = await tx.user.create({ data: { name: "Учебный главный очереди", email: `${randomUUID()}@example.test`, emailVerified: true, twoFactorEnabled: true, role: "CHIEF_ORGANIZER" } });
+    const chief = await tx.user.create({ data: { name: "Учебный главный очереди", email: `${randomUUID()}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER" } });
     await tx.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     const users = [], participations = [];
     for (let i=0;i<3;i++) {

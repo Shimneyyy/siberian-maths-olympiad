@@ -23,7 +23,7 @@ async function archive(files:[string,Uint8Array][]){const zip=new ZipFile();for(
 async function pdf(text="Synthetic diploma"){const doc=await PDFDocument.create();doc.addPage().drawText(text);return Buffer.from(await doc.save());}
 async function fixture(){
  const edition=await db.olympiadEdition.create({data:{year:year++,title:"Учебные дипломы"}}),foreign=await db.olympiadEdition.create({data:{year:year++,title:"Чужой год"}});
- const chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный главный",role:"CHIEF_ORGANIZER",emailVerified:true,twoFactorEnabled:true}});
+ const chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный главный",role:"CHIEF_ORGANIZER",emailVerified:true}});
  await db.account.create({data:{userId:chief.id,accountId:chief.id,providerId:"credential",password:hash}});await db.editionStaffGrant.create({data:{userId:chief.id,editionId:edition.id}});
  const uni=await db.university.create({data:{name:"Учебный вуз",abbreviation:"УВ"}}),course=await db.courseOption.create({data:{label:"Учебный курс"}}),people=[];
  for(let i=0;i<3;i++){const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:`Синтетический участник ${i}`,emailVerified:true}});const consent=await db.consentRecord.create({data:{userId:user.id,purpose:"synthetic-demo-only",textVersion:"demo",textHash:"a".repeat(64)}});const p=await db.participation.create({data:{editionId:i===2?foreign.id:edition.id,userId:user.id,format:"REMOTE",remoteZone:"NSK",fullName:user.name,universityId:uni.id,universityName:uni.name,universityAbbreviation:uni.abbreviation,courseId:course.id,courseLabel:course.label,consentId:consent.id}});const login=`legacy.${randomUUID()}`;await db.legacyNsuhwClaim.create({data:{userId:user.id,login,approvedAt:new Date(),approvedById:chief.id,approvedEditionId:p.editionId}});people.push({user,p,login});}
@@ -69,14 +69,14 @@ test("E10 replacement leaves old available until publication, then closes its ve
  await assert.rejects(downloadDiploma(db,owner.user.id,{documentId:doc.id,versionId:doc.currentVersionId},f.store));
  await f.reset();const third=await f.prepare([[`${owner.login}.pdf`,old]]);await f.apply(third.id);await f.publish(third.id);assert.equal((await ownDiplomas(db,owner.user.id)).length,2);
 });
-test("E10 rejects wrong year, role, missing MFA/password/confirmation and cross-owner replacement",async()=>{
+test("E10 rejects wrong year, role, missing verified email/password/confirmation and cross-owner replacement",async()=>{
  const f=await fixture(),bytes=await pdf(),batch=await f.prepare([[`${f.people[0].login}.pdf`,bytes]]),command={...f.scope,batchId:batch.id,password,confirmed:true};
  const deniedUsers:string[]=[];
- for(const role of ["STUDENT","VENUE_ORGANIZER","TECHNICAL_ADMIN"] as const){const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебная роль",role,emailVerified:true,twoFactorEnabled:true}});deniedUsers.push(user.id);await assert.rejects(diplomaBatchView(db,user.id,{...f.scope,batchId:batch.id}));await assert.rejects(publishDiplomaBatch(db,user.id,command,f.store));}
+ for(const role of ["STUDENT","VENUE_ORGANIZER","TECHNICAL_ADMIN"] as const){const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебная роль",role,emailVerified:true}});deniedUsers.push(user.id);await assert.rejects(diplomaBatchView(db,user.id,{...f.scope,batchId:batch.id}));await assert.rejects(publishDiplomaBatch(db,user.id,command,f.store));}
  await assert.rejects(publishDiplomaBatch(db,f.chief.id,{...command,editionId:f.foreign.id},f.store));
  await assert.rejects(applyDiplomaBatch(db,f.chief.id,{...command,password:"wrong",selection:await f.selection(batch.id)}));
  await assert.rejects(applyDiplomaBatch(db,f.chief.id,{...command,confirmed:false,selection:await f.selection(batch.id)}));
- await db.user.update({where:{id:f.chief.id},data:{twoFactorEnabled:false}});await assert.rejects(f.apply(batch.id));await db.user.update({where:{id:f.chief.id},data:{twoFactorEnabled:true}});
+ await db.user.update({where:{id:f.chief.id},data:{emailVerified:false}});await assert.rejects(f.apply(batch.id));await db.user.update({where:{id:f.chief.id},data:{emailVerified:true}});
  await f.apply(batch.id);await f.publish(batch.id);await f.reset();const foreignDoc=await db.diplomaDocument.findFirstOrThrow({where:f.scope});
  for(const id of deniedUsers)await assert.rejects(downloadDiploma(db,id,{documentId:foreignDoc.id},f.store));
  const second=await f.prepare([[`${f.people[1].login}.pdf`,bytes]]);const selection=await f.selection(second.id);selection[0].documentId=foreignDoc.id;selection[0].revision=1;

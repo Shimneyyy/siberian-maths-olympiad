@@ -18,11 +18,11 @@ const schema=`delivery_${randomUUID().replaceAll("-","")}`,connection=process.en
 const db=new PrismaClient({adapter:new PrismaPg({connectionString:connection,options:`-c search_path=${schema}`},{schema})});
 const password=`Synthetic-${randomUUID()}`,keys=new DemoLocalKeyProtector({activeVersion:"v1",keys:{v1:randomBytes(32).toString("base64")}});
 let hash:string,serial=8500,admin:string;
-before(async()=>{await sql.connect();await sql.query(`CREATE SCHEMA "${schema}"`);await sql.query(`SET search_path TO "${schema}"`);for(const m of(await readdir("prisma/migrations")).filter(x=>/^\d/.test(x)).sort())await sql.query(await readFile(`prisma/migrations/${m}/migration.sql`,"utf8"));hash=await hashPassword(password);admin=(await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный администратор",role:"TECHNICAL_ADMIN",emailVerified:true,twoFactorEnabled:true}})).id;});
+before(async()=>{await sql.connect();await sql.query(`CREATE SCHEMA "${schema}"`);await sql.query(`SET search_path TO "${schema}"`);for(const m of(await readdir("prisma/migrations")).filter(x=>/^\d/.test(x)).sort())await sql.query(await readFile(`prisma/migrations/${m}/migration.sql`,"utf8"));hash=await hashPassword(password);admin=(await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный администратор",role:"TECHNICAL_ADMIN",emailVerified:true}})).id;});
 after(async()=>{await db.$disconnect();await sql.query('SET search_path TO public');await sql.query(`DROP SCHEMA "${schema}" CASCADE`);await sql.end();});
 async function fixture(){
  const edition=await db.olympiadEdition.create({data:{year:serial++,title:"Учебная передача"}}),foreign=await db.olympiadEdition.create({data:{year:serial++,title:"Чужая передача"}});
- const chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный главный",role:"CHIEF_ORGANIZER",emailVerified:true,twoFactorEnabled:true}});
+ const chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный главный",role:"CHIEF_ORGANIZER",emailVerified:true}});
  await db.account.create({data:{userId:chief.id,accountId:chief.id,providerId:"credential",password:hash}});await db.editionStaffGrant.create({data:{userId:chief.id,editionId:edition.id}});
  const uni=await db.university.create({data:{name:"Учебный вуз",abbreviation:"УВ"}}),course=await db.courseOption.create({data:{label:"Учебный курс"}});
  const participants=[];
@@ -82,12 +82,12 @@ test("E05 incorrect versions and outbox failure roll the entire creation confirm
  assert.equal(await db.preparedExternalAccount.count({where:{userId:{in:f.participants.map(p=>p.user.id)},confirmedAt:{not:null}}}),0);
  assert.equal(await db.outboxEvent.count({where:{editionId:f.edition.id}}),0);
 });
-test("E05 requires chief scope/MFA/password and separate import confirmation; revocation and spoofing fail",async()=>{
+test("E05 requires chief scope/verified email/password and separate import confirmation; revocation and spoofing fail",async()=>{
  const f=await fixture(),view=await f.view(),body={...f.scope,password,confirmed:true,selectionHash:view.selectionHash};
  await assert.rejects(downloadNsuhwExport(db,admin,body,keys));await assert.rejects(downloadNsuhwExport(db,f.participants[0].user.id,body,keys));
  await assert.rejects(nsuhwExportView(db,f.chief.id,{editionId:f.foreign.id}));await assert.rejects(downloadNsuhwExport(db,f.chief.id,{...body,actorId:admin},keys));
  await assert.rejects(downloadNsuhwExport(db,f.chief.id,{...body,password:"wrong"},keys));
- await db.user.update({where:{id:f.chief.id},data:{twoFactorEnabled:false}});await assert.rejects(f.download());await db.user.update({where:{id:f.chief.id},data:{twoFactorEnabled:true}});
+ await db.user.update({where:{id:f.chief.id},data:{emailVerified:false}});await assert.rejects(f.download());await db.user.update({where:{id:f.chief.id},data:{emailVerified:true}});
  const exported=await f.download();await assert.rejects(confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:false}));
  await db.editionStaffGrant.update({where:{userId_editionId:{userId:f.chief.id,editionId:f.edition.id}},data:{revokedAt:new Date()}});await assert.rejects(confirmNsuhwExport(db,f.chief.id,{...f.scope,batchId:exported.id,password,confirmed:true,createdOnNsuhw:true}));
 });

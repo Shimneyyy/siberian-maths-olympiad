@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { hashPassword, symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
+import { hashPassword } from "better-auth/crypto";
 import { PDFDocument } from "pdf-lib";
 import { ZipFile } from "yazl";
 import { DemoBackupStore } from "../src/lib/managed-backups";
@@ -38,13 +38,12 @@ test("F03 actual encrypted PostgreSQL/files/keys backup restores privately, pres
     process.env.NSUHW_KEYRING_FILE = join(root, "source-keyring.json");
     await writeFile(process.env.NSUHW_KEYRING_FILE, JSON.stringify({ activeVersion: "v1", keys: { v1: randomBytes(32).toString("base64") } }), { mode: 0o600, flag: "wx" });
     const edition = await db.olympiadEdition.create({ data: { year: 9500, title: "Учебное восстановление" } });
-    const chief = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
+    const chief = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true } });
     const owner = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный владелец", emailVerified: true } });
     const passwordHash = await hashPassword(password);
     for (const user of [chief, owner]) await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: passwordHash } });
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
-    const factorSecret = "SYNTHETICMFAKEY", authSecret = process.env.BETTER_AUTH_SECRET!;
-    await db.twoFactor.create({ data: { userId: chief.id, secret: await symmetricEncrypt({ key: authSecret, data: factorSecret }), backupCodes: await symmetricEncrypt({ key: authSecret, data: JSON.stringify(["synthetic-backup"]) }) } });
+    const authSecret = process.env.BETTER_AUTH_SECRET!;
     const uni = await db.university.create({ data: { name: "Учебный вуз", abbreviation: "УВ" } }), course = await db.courseOption.create({ data: { label: "Учебный курс" } });
     const consent = await db.consentRecord.create({ data: { userId: owner.id, purpose: "synthetic-demo-only", textVersion: "demo", textHash: "a".repeat(64) } });
     const p = await db.participation.create({ data: { editionId: edition.id, userId: owner.id, format: "REMOTE", remoteZone: "NSK", fullName: owner.name, universityId: uni.id, universityName: uni.name, universityAbbreviation: uni.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consent.id } });
@@ -81,8 +80,8 @@ test("F03 actual encrypted PostgreSQL/files/keys backup restores privately, pres
     assert.deepEqual((await downloadDiploma(restored, owner.id, { documentId: document.id }, restoredFiles)).bytes, pdfBytes);
     assert.equal((await personalHistory(restored, owner.id)).rows[0].total, 42);
     assert.ok((await revealNsuhwSecret(restored, owner.id, { password, confirmed: true })).password === external, "Restored key decrypts the original external credential");
-    const factor = await restored.twoFactor.findFirstOrThrow();
-    assert.ok(await symmetricDecrypt({ key: secrets.authSecret, data: factor.secret }) === factorSecret, "Original authentication secret restores MFA");
+    assert.equal(secrets.authSecret, authSecret, "Authentication/HMAC secret is preserved");
+    assert.equal((await restored.account.findFirstOrThrow({ where: { userId: chief.id } })).password, passwordHash);
     await assert.rejects(restored.individualResult.updateMany({ data: { total: 99 } }));
     await assert.rejects(restored.resultPublication.deleteMany());
     await assert.rejects(restored.participation.update({ where: { id: p.id }, data: { userId: chief.id } }));
@@ -92,7 +91,7 @@ test("F03 actual encrypted PostgreSQL/files/keys backup restores privately, pres
     assert.equal(await restored.auditEvent.findUnique({ where: { id: oldAudit.id } }), null);
     assert.equal(await restored.consentWithdrawalRequest.count(), 1);
     assert.equal(await restored.diplomaDocument.count(), 1); assert.equal(await restored.individualResult.count(), 1);
-    console.info(`Synthetic restore drill: ${Date.now() - start} ms; database, PDF hash, keys/MFA, SQL guards, request replay and audit expiry verified.`);
+    console.info(`Synthetic restore drill: ${Date.now() - start} ms; database, PDF hash, keys/passwords, SQL guards, request replay and audit expiry verified.`);
   } finally {
     process.env.NSUHW_KEYRING_FILE = originalKeyPath;
     if (originalKeyPath === undefined) delete process.env.NSUHW_KEYRING_FILE;

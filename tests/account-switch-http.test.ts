@@ -4,20 +4,13 @@ import { existsSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { randomUUID, createHmac } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "better-auth/crypto";
 import { chromium } from "playwright";
 const base = process.env.TEST_BASE_URL!;
 if (!["localhost", "127.0.0.1"].includes(new URL(base).hostname) || !/^\/smo_test_[a-f0-9]+$/.test(new URL(process.env.DATABASE_URL!).pathname)) throw new Error("Disposable synthetic database required");
-function totp(uri: string) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", encoded = new URL(uri).searchParams.get("secret")!;
-  const bits = [...encoded].map(c => chars.indexOf(c).toString(2).padStart(5, "0")).join("");
-  const key = Buffer.from(bits.match(/.{8}/g)!.map(x => parseInt(x, 2))), counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000))); const digest = createHmac("sha1", key).update(counter).digest();
-  return String((digest.readUInt32BE(digest[digest.length - 1] & 15) & 0x7fffffff) % 1000000).padStart(6, "0");
-}
 test("same browser switches admin to newly registered/verified student, including DOM autofill", { timeout: 120000 }, async () => {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
@@ -33,8 +26,6 @@ test("same browser switches admin to newly registered/verified student, includin
     const context = await browser.newContext(), page = await context.newPage();
     const post = (path: string, data: unknown) => context.request.post(`${base}/api/auth/${path}`, { headers: { Origin: base }, data });
     assert.equal((await post("sign-in/email", { email: admin.email, password: adminPassword })).status(), 200);
-    const enrollment = await (await post("two-factor/enable", { password: adminPassword })).json() as { totpURI: string };
-    assert.equal((await post("two-factor/verify-totp", { code: totp(enrollment.totpURI), trustDevice: false })).status(), 200);
     await page.goto(`${base}/cabinet`); await page.getByText("Технический администратор", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Выйти", exact: true }).click(); await page.waitForURL(`${base}/login`);
     assert.equal((await context.request.get(`${base}/api/me`)).status(), 401);
@@ -81,11 +72,8 @@ test("same browser switches admin to newly registered/verified student, includin
     await page.getByRole("button", { name: "Выйти", exact: true }).click(); await page.waitForURL(`${base}/login`);
     await page.getByLabel("Email", { exact: true }).fill(admin.email);
     await page.locator('input[name="password"]').fill(adminPassword);
-    await page.getByRole("button", { name: "Продолжить", exact: true }).click(); await page.waitForURL(`${base}/two-factor`);
-    assert.equal((await context.request.get(`${base}/api/me`)).status(), 401, "Admin password alone does not retain a student or admin session");
-    await page.locator('input[name="code"]').fill(totp(enrollment.totpURI));
     await page.getByRole("button", { name: "Продолжить", exact: true }).click(); await page.waitForURL(`${base}/cabinet`);
     assert.equal((await(await context.request.get(`${base}/api/me`)).json()).user.id, admin.id);
-    console.info("DOM autofill and reverse student → admin login with real TOTP passed");
+    console.info("DOM autofill and reverse student → admin login with email/password passed");
   } finally { await browser.close(); await db.$disconnect(); }
 });

@@ -16,7 +16,6 @@ class AuthResponseError extends Error {
 const routes = new Set([
   "sign-up/email", "sign-in/email", "sign-out", "get-session", "request-password-reset", "reset-password",
   "email-otp/send-verification-otp", "email-otp/verify-email",
-  "two-factor/enable", "two-factor/verify-totp", "two-factor/verify-backup-code",
 ]);
 export const dynamic = "force-dynamic";
 async function handle(request: Request) {

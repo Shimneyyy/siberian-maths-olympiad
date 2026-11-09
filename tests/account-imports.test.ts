@@ -21,7 +21,7 @@ after(async () => { await db.$disconnect(); await sql.query("SET search_path TO 
 const csv = (rows: string[][]) => "\uFEFF" + csvRow(["ID пользователя ЛК", "логин nsuhw", "пароль nsuhw"]) + rows.map(csvRow).join("");
 async function fixture() {
   const edition = await db.olympiadEdition.create({ data: { year: year++, title: "Учебный импорт" } });
-  const chief = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
+  const chief = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true } });
   await db.account.create({ data: { userId: chief.id, accountId: chief.id, providerId: "credential", password: hash } });
   await db.editionStaffGrant.create({ data: { editionId: edition.id, userId: chief.id } });
   const uni = await db.university.create({ data: { name: "Учебный вуз", abbreviation: "УВ" } }), course = await db.courseOption.create({ data: { label: "Учебный курс" } });
@@ -78,17 +78,17 @@ test("E02 duplicates all fail; legacy/existing logins cannot be replaced, stale 
   await assert.rejects(applyAccountImport(db, f.chief.id, { ...command, csv: command.csv + "\n" }));
   assert.equal((await f.preview()).validCount, 0);
 });
-test("E03 rejects roles, MFA/password/confirmation/spoofing, wrong year and revoked grants", async () => {
+test("E03 rejects roles, verified email/password/confirmation/spoofing, wrong year and revoked grants", async () => {
   const f = await fixture(), command = await f.command();
   await assert.rejects(previewAccountImport(db, f.people[0].user.id, f.input));
   await assert.rejects(applyAccountImport(db, f.chief.id, { ...command, userId: f.people[0].user.id }));
   await assert.rejects(applyAccountImport(db, f.chief.id, { ...command, password: "Wrong" }));
   await assert.rejects(applyAccountImport(db, f.chief.id, { ...command, confirmed: false }));
   await assert.rejects(previewAccountImport(db, f.chief.id, { ...f.input, editionId: randomUUID() }));
-  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: false } }); await assert.rejects(f.preview());
-  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: true } });
+  await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: false } }); await assert.rejects(f.preview());
+  await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: true } });
   for (const role of ["TECHNICAL_ADMIN", "VENUE_ORGANIZER"] as const) {
-    const actor = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебная роль", role, emailVerified: true, twoFactorEnabled: true } });
+    const actor = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебная роль", role, emailVerified: true } });
     await assert.rejects(previewAccountImport(db, actor.id, f.input));
   }
   await db.editionStaffGrant.update({ where: { userId_editionId: { userId: f.chief.id, editionId: f.edition.id } }, data: { revokedAt: new Date() } });

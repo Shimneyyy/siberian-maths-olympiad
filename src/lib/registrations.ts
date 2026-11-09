@@ -19,7 +19,6 @@ type Tx = Prisma.TransactionClient;
 async function staffActor(tx: Tx, actorId: string) {
   const actor = await tx.user.findUnique({ where: { id: actorId } });
   if (!actor?.emailVerified || !["CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(actor.role)) throw new AccessDenied("FORBIDDEN");
-  if (!actor.twoFactorEnabled) throw new AccessDenied("MFA_REQUIRED");
   return actor;
 }
 

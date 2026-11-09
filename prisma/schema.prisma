@@ -34,10 +34,8 @@ model User {
   name             String
   emailVerified    Boolean                @default(false)
   image            String?
-  twoFactorEnabled Boolean                @default(false)
   sessions         Session[]
   accounts         Account[]
-  twoFactors       TwoFactor[]
   editionGrants    EditionStaffGrant[]
   venueAssignments VenueStaffAssignment[]
   role             Role                   @default(STUDENT)
@@ -172,19 +170,6 @@ model Verification {
   @@index([identifier])
 }
 
-model TwoFactor {
-  id                      String    @id @default(uuid()) @db.Uuid
-  secret                  String
-  backupCodes             String
-  userId                  String    @db.Uuid
-  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  verified                Boolean   @default(true)
-  failedVerificationCount Int       @default(0)
-  lockedUntil             DateTime? @db.Timestamptz(3)
-
-  @@index([userId])
-  @@index([secret])
-}
 
 model RateLimit {
   id          String @id @default(uuid()) @db.Uuid

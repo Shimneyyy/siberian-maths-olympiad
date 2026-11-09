@@ -22,7 +22,7 @@ before(async () => {
   foreign = (await db.olympiadEdition.create({ data: { year: 8001, title: "Другие объявления" } })).id;
   const uni = await db.university.create({ data: { name: "Учебный вуз", abbreviation: "УВ" } });
   const course = await db.courseOption.create({ data: { label: "Учебный курс" } });
-  chief = (await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } })).id;
+  chief = (await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебный главный", role: "CHIEF_ORGANIZER", emailVerified: true } })).id;
   await db.account.create({ data: { userId: chief, accountId: chief, providerId: "credential", password: await hashPassword(password) } });
   await db.editionStaffGrant.create({ data: { userId: chief, editionId: edition } });
   for (let i=0; i<2; i++) {
@@ -71,14 +71,14 @@ test("ordinary year-wide publication has no mail, is visible to all participants
   await assert.rejects(announcementsView(db, student, { editionId: foreign }));
   await assert.rejects(announcementsView(db, chief, { editionId: foreign }));
 });
-test("roles, MFA, wrong password, revoked grants and spoofed actor are denied", async () => {
+test("roles, verified email, wrong password, revoked grants and spoofed actor are denied", async () => {
   const draft = await fresh();
   await assert.rejects(saveAnnouncement(db, student, input()));
   await assert.rejects(saveAnnouncement(db, chief, { ...input(), actorId: student }));
   await assert.rejects(saveAnnouncement(db, chief, { ...input(), password: "wrong" }));
-  await db.user.update({ where: { id: chief }, data: { twoFactorEnabled: false } });
+  await db.user.update({ where: { id: chief }, data: { emailVerified: false } });
   await assert.rejects(saveAnnouncement(db, chief, input()));
-  await db.user.update({ where: { id: chief }, data: { twoFactorEnabled: true } });
+  await db.user.update({ where: { id: chief }, data: { emailVerified: true } });
   await db.editionStaffGrant.update({ where: { userId_editionId: { userId: chief, editionId: edition } }, data: { revokedAt: new Date() } });
   await assert.rejects(publishAnnouncement(db, chief, { editionId: edition, id: draft.id, revision: 0, confirm: true, password }));
   await assert.rejects(announcementsView(db, chief, { editionId: edition }));
@@ -105,7 +105,7 @@ test("outbox failure rolls publication and audit back; cross-year audience is re
   assert.equal(await db.outboxEvent.count({ where: { sourceId: draft.id } }), 0);
   await assert.rejects(db.announcement.create({ data: { editionId: foreign, editionVenueId: site, authorId: chief, title: "Учебный отказ", body: "Учебный текст" } }));
   for (const role of ["TECHNICAL_ADMIN", "VENUE_ORGANIZER"] as const) {
-    const user = await db.user.create({ data: { name: "Учебный отказ", email: `${randomUUID()}@example.test`, emailVerified: true, twoFactorEnabled: true, role } });
+    const user = await db.user.create({ data: { name: "Учебный отказ", email: `${randomUUID()}@example.test`, emailVerified: true, role } });
     await assert.rejects(saveAnnouncement(db, user.id, input()));
     await assert.rejects(announcementsView(db, user.id, { editionId: edition }));
   }
@@ -170,7 +170,7 @@ test("C11 only chief transfers active onsite participation, preserves snapshots/
   await db.attendance.create({ data: { participationId: before.id, status: "PRESENT", markedById: chief } });
   const staff = [];
   for (const venueId of [before.editionVenueId!,site]) {
-    const user = await db.user.create({data:{name:"Учебный организатор переноса",email:`${randomUUID()}@example.test`,role:"VENUE_ORGANIZER",emailVerified:true,twoFactorEnabled:true}});
+    const user = await db.user.create({data:{name:"Учебный организатор переноса",email:`${randomUUID()}@example.test`,role:"VENUE_ORGANIZER",emailVerified:true}});
     await db.venueStaffAssignment.create({data:{userId:user.id,editionId:edition,editionVenueId:venueId}}); staff.push(user.id);
   }
   const { listRegistrations } = await import("../src/lib/registrations");

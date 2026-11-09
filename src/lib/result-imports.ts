@@ -15,7 +15,7 @@ async function guard(tx: PrismaClient | Prisma.TransactionClient, actorId: strin
 }
 export async function resultImportOptions(db: PrismaClient, actorId: string) {
   const user = await db.user.findUniqueOrThrow({ where: { id: actorId } });
-  if (!user.emailVerified || user.role !== "CHIEF_ORGANIZER" || !user.twoFactorEnabled) throw new AccessDenied("FORBIDDEN");
+  if (!user.emailVerified || user.role !== "CHIEF_ORGANIZER") throw new AccessDenied("FORBIDDEN");
   assertDemoRegistration(user.email);
   return db.olympiadEdition.findMany({ where: { staffGrants: { some: { userId: actorId, revokedAt: null } } }, orderBy: { year: "desc" }, select: { id: true, year: true } });
 }

@@ -31,10 +31,10 @@ async function fixture(year: number) {
       return { ...u, consentId: consent.id };
     };
     const a = await student("А"), b = await student("Б");
-    const chief = await tx.user.create({ data: { name: "Синтетический главный организатор", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
-    const admin = await tx.user.create({ data: { name: "Тестовый администратор", email: `${randomUUID()}@example.test`, role: "TECHNICAL_ADMIN", emailVerified: true, twoFactorEnabled: true } });
+    const chief = await tx.user.create({ data: { name: "Синтетический главный организатор", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true } });
+    const admin = await tx.user.create({ data: { name: "Тестовый администратор", email: `${randomUUID()}@example.test`, role: "TECHNICAL_ADMIN", emailVerified: true } });
     await tx.account.create({ data: { accountId: admin.id, userId: admin.id, providerId: "credential", password: await hashPassword("Synthetic-admin-password") } });
-    const staff = await tx.user.create({ data: { name: "Синтетический организатор", email: `${randomUUID()}@example.test`, role: "VENUE_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
+    const staff = await tx.user.create({ data: { name: "Синтетический организатор", email: `${randomUUID()}@example.test`, role: "VENUE_ORGANIZER", emailVerified: true } });
     const schedule = { registrationOpensAt: opens, registrationClosesAt: closes };
     const first = await tx.olympiadEdition.create({ data: { year, title: "Тестовый выпуск", ...schedule } });
     const next = await tx.olympiadEdition.create({ data: { year: year + 1, title: "Следующий выпуск", ...schedule } });

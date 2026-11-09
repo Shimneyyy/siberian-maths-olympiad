@@ -8,7 +8,7 @@ import { authorizeStaff, AccessDenied } from "../src/lib/access";
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 after(() => db.$disconnect());
 
-test("server policy enforces role, MFA, edition, venue and immediate revocation", async () => {
+test("server policy enforces role, verified email, edition, venue and immediate revocation", async () => {
   const rollback = new Error("rollback");
   await assert.rejects(db.$transaction(async (tx) => {
     const edition = await tx.olympiadEdition.create({ data: { year: 6000, title: "Проверка прав" } });
@@ -16,16 +16,16 @@ test("server policy enforces role, MFA, edition, venue and immediate revocation"
     const venue = await tx.venue.create({ data: { name: "Тестовая площадка" } });
     const first = await tx.editionVenue.create({ data: { editionId: edition.id, venueId: venue.id, address: "Синтетический адрес" } });
     const other = await tx.editionVenue.create({ data: { editionId: otherEdition.id, venueId: venue.id, address: "Синтетический адрес" } });
-    const createUser = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER", mfa = true) => tx.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Синтетический пользователь", role, emailVerified: true, twoFactorEnabled: mfa } });
+    const createUser = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER", verified = true) => tx.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Синтетический пользователь", role, emailVerified: verified } });
     const student = await createUser("STUDENT");
     const chief = await createUser("CHIEF_ORGANIZER");
     const staff = await createUser("VENUE_ORGANIZER");
-    const unprotected = await createUser("CHIEF_ORGANIZER", false);
+    const unverified = await createUser("CHIEF_ORGANIZER", false);
     await tx.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     await tx.venueStaffAssignment.create({ data: { userId: staff.id, editionId: edition.id, editionVenueId: first.id } });
     const forbidden = (error: unknown) => error instanceof AccessDenied && error.reason === "FORBIDDEN";
     await assert.rejects(authorizeStaff(tx, student.id, "registrations:read", edition.id, first.id), forbidden);
-    await assert.rejects(authorizeStaff(tx, unprotected.id, "results:publish", edition.id), (e: unknown) => e instanceof AccessDenied && e.reason === "MFA_REQUIRED");
+    await assert.rejects(authorizeStaff(tx, unverified.id, "results:publish", edition.id), (e: unknown) => e instanceof AccessDenied && e.reason === "FORBIDDEN");
     await authorizeStaff(tx, chief.id, "results:publish", edition.id);
     await assert.rejects(authorizeStaff(tx, chief.id, "results:publish", otherEdition.id), forbidden);
     await authorizeStaff(tx, staff.id, "attendance:write", edition.id, first.id);

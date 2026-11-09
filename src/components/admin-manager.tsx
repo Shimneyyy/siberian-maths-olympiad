@@ -14,7 +14,7 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
     try {
       const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
-      setMessage(response.ok ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email и подключает TOTP." : result.error || "Ошибка");
+      setMessage(response.ok ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email." : result.error || "Ошибка");
       if (response.ok) router.refresh();
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }

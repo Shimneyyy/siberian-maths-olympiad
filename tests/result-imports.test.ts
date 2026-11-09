@@ -24,7 +24,7 @@ after(async () => { await db.$disconnect(); await sql.query("SET search_path TO 
 async function fixture() {
   const edition = await db.olympiadEdition.create({ data: { year: serial++, title: "Учебные результаты" } });
   const foreign = await db.olympiadEdition.create({ data: { year: serial++, title: "Другой год" } });
-  const chief = await db.user.create({ data: { name: "Учебный главный", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true, twoFactorEnabled: true } });
+  const chief = await db.user.create({ data: { name: "Учебный главный", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true } });
   await db.account.create({ data: { userId: chief.id, accountId: chief.id, providerId: "credential", password: hash } });
   await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
   const uni = await db.university.create({ data: { name: "Учебный вуз", abbreviation: "УВ" } }), course = await db.courseOption.create({ data: { label: "Учебный курс" } });
@@ -82,10 +82,10 @@ test("E07 duplicates all fail, stale preview and concurrent imports never overwr
   await assert.rejects(applyResultImport(db, f.chief.id, stale));
   await assert.rejects(previewResultImport(db, f.chief.id, { ...f.input([`${b.login},1,2,3,`]), csv: `Логин,Задача 1,Сумма,Приз\n${b.login},1,1,` }));
 });
-test("E07 roles, year, MFA, email, demo mode, reauth, confirmation and spoofed fields are enforced", async () => {
+test("E07 roles, year, email, demo mode, reauth, confirmation and spoofed fields are enforced", async () => {
   const f = await fixture(), body = await f.command([`${f.people[0].login},1,2,3,`]);
   for (const role of ["STUDENT", "VENUE_ORGANIZER", "TECHNICAL_ADMIN"] as const) {
-    const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебная чужая роль", role, emailVerified: true, twoFactorEnabled: true } });
+    const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Учебная чужая роль", role, emailVerified: true } });
     await assert.rejects(previewResultImport(db, user.id, f.input([`${f.people[0].login},1,2,3,`])));
     await assert.rejects(applyResultImport(db, user.id, body)); await assert.rejects(resultImportOptions(db, user.id));
   }
@@ -93,7 +93,7 @@ test("E07 roles, year, MFA, email, demo mode, reauth, confirmation and spoofed f
   await assert.rejects(applyResultImport(db, f.chief.id, { ...body, confirmed: false }));
   await assert.rejects(applyResultImport(db, f.chief.id, { ...body, actorId: f.chief.id }));
   await assert.rejects(previewResultImport(db, f.chief.id, { ...f.input([]), editionId: f.foreign.id }));
-  for (const field of ["twoFactorEnabled", "emailVerified"] as const) { await db.user.update({ where: { id: f.chief.id }, data: { [field]: false } }); await assert.rejects(applyResultImport(db, f.chief.id, body)); await db.user.update({ where: { id: f.chief.id }, data: { [field]: true } }); }
+  for (const field of ["emailVerified"] as const) { await db.user.update({ where: { id: f.chief.id }, data: { [field]: false } }); await assert.rejects(applyResultImport(db, f.chief.id, body)); await db.user.update({ where: { id: f.chief.id }, data: { [field]: true } }); }
   process.env.DEMO_REGISTRATION = "false"; try { await assert.rejects(applyResultImport(db, f.chief.id, body)); } finally { process.env.DEMO_REGISTRATION = "true"; }
   await db.editionStaffGrant.update({ where: { userId_editionId: { userId: f.chief.id, editionId: f.edition.id } }, data: { revokedAt: new Date() } });
   await assert.rejects(applyResultImport(db, f.chief.id, body));
@@ -129,9 +129,9 @@ test("E08a stored import review is paginated, chief-scoped and never exposes aut
   await assert.rejects(reviewResultImports(db, f.people[0].user.id, input));
   await assert.rejects(reviewResultImports(db, f.chief.id, { ...input, editionId: f.foreign.id }));
   await assert.rejects(reviewResultImports(db, f.chief.id, { ...input, userId: f.chief.id }));
-  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: false } });
+  await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: false } });
   await assert.rejects(reviewResultImports(db, f.chief.id, input));
-  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: true } });
+  await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: true } });
   await db.editionStaffGrant.update({ where: { userId_editionId: { userId: f.chief.id, editionId: f.edition.id } }, data: { revokedAt: new Date() } });
   await assert.rejects(reviewResultImports(db, f.chief.id, input));
 });
@@ -159,7 +159,7 @@ test("E08 publishes only selected batches atomically, retries deduplicate, final
   assert.equal(await db.outboxJob.count({where:{editionId:f.edition.id}}),3);
   await assert.rejects(db.resultPublication.delete({where:{batchId:first.id}}));
 });
-test("E08 scopes reads to own results or assigned venues and rejects spoofing, MFA bypass, foreign years and revoked grants", async () => {
+test("E08 scopes reads to own results or assigned venues and rejects spoofing, unverified email, foreign years and revoked grants", async () => {
   const { publishResults, resultsView } = await import("../src/lib/results");
   const f=await fixture(),a=f.people[0];
   const venue=await db.editionVenue.create({data:{edition:{connect:{id:f.edition.id}},address:"Учебный адрес",venue:{create:{name:"Учебная площадка"}}}});
@@ -172,13 +172,13 @@ test("E08 scopes reads to own results or assigned venues and rejects spoofing, M
   await assert.rejects(publishResults(db,f.chief.id,{...command,editionId:f.foreign.id}));
   await assert.rejects(resultsView(db,a.user.id,{editionId:f.edition.id,userId:f.people[1].user.id}));
   await publishResults(db,f.chief.id,command);
-  const staff=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный площадочный",role:"VENUE_ORGANIZER",emailVerified:true,twoFactorEnabled:true}});
+  const staff=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный площадочный",role:"VENUE_ORGANIZER",emailVerified:true}});
   await db.venueStaffAssignment.create({data:{userId:staff.id,editionId:f.edition.id,editionVenueId:venue.id}});
   const input={editionId:f.edition.id};
   assert.equal((await resultsView(db,staff.id,input)).total,1);
   await assert.rejects(publishResults(db,staff.id,command));
-  await db.user.update({where:{id:staff.id},data:{twoFactorEnabled:false}});await assert.rejects(resultsView(db,staff.id,input));
-  await db.user.update({where:{id:staff.id},data:{twoFactorEnabled:true}});
+  await db.user.update({where:{id:staff.id},data:{emailVerified:false}});await assert.rejects(resultsView(db,staff.id,input));
+  await db.user.update({where:{id:staff.id},data:{emailVerified:true}});
   await db.venueStaffAssignment.update({where:{userId_editionVenueId:{userId:staff.id,editionVenueId:venue.id}},data:{revokedAt:new Date()}});
   await assert.rejects(resultsView(db,staff.id,input));
   await db.editionStaffGrant.update({where:{userId_editionId:{userId:f.chief.id,editionId:f.edition.id}},data:{revokedAt:new Date()}});

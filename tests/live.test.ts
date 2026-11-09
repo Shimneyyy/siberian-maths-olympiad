@@ -3,20 +3,11 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { chromium, type BrowserContext } from "playwright";
 import { hashPassword } from "better-auth/crypto";
-import { randomUUID, createHmac } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const base = process.env.TEST_BASE_URL;
 if (!base || !["localhost", "127.0.0.1"].includes(new URL(base).hostname)) throw new Error("Local synthetic test server required");
-function totp(uri: string) {
-  const encoded = new URL(uri).searchParams.get("secret")!;
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const bits = [...encoded.replace(/=+$/, "")].map(x => alphabet.indexOf(x.toUpperCase()).toString(2).padStart(5, "0")).join("");
-  const secret = Buffer.from(bits.match(/.{8}/g)!.map(x => parseInt(x, 2)));
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const digest = createHmac("sha1", secret).update(counter).digest();
-  return String((digest.readUInt32BE(digest[digest.length - 1] & 15) & 0x7fffffff) % 1000000).padStart(6, "0");
-}
 test("two browser sessions see attendance within ten seconds, reconnect and lose revoked access", { timeout: 180000 }, async () => {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox"] });
@@ -44,8 +35,6 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     for (const [context, user] of [[observer, staff], [editor, chief]] as const) {
       await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: await hashPassword(password) } });
       assert.equal((await request(context, "/api/auth/sign-in/email", { email: user.email, password })).status(), 200);
-      const enrollment = await (await request(context, "/api/auth/two-factor/enable", { password, method: "totp" })).json();
-      assert.equal((await request(context, "/api/auth/two-factor/verify-totp", { code: totp(enrollment.totpURI), trustDevice: false })).status(), 200);
     }
     await db.studentProfile.create({ data: { userId: student.id, fullName: student.name, universityId, courseId } });
     const recipient = await db.user.create({ data: { name: "Учебный приглашённый браузер", email: `browser-recipient-${tag}@example.test`, emailVerified: true } }); ids.push(recipient.id);
@@ -84,7 +73,7 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     await captainPage.close(); await recipientPage.close();
     console.info("Browser: profile isolation, team creation/invitation and cancellation with slot release passed");
     const page = await observer.newPage(), otherPage = await editor.newPage();
-    console.info("Browser: opening observer after real TOTP login");
+    console.info("Browser: opening observer after email/password login");
     await page.goto(`${base}/cabinet/registrations`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await otherPage.goto(`${base}/cabinet/registrations`, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.info("Browser: both rosters loaded");

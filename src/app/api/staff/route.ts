@@ -14,7 +14,7 @@ async function handle(request: Request, revoke: boolean) {
   if (!session?.user.emailVerified) return Response.json({ error: "Unauthorized" }, { status: 401, headers });
   let body: unknown;
   try { body = (await readJsonBody(request)).value; } catch (error) { return Response.json({ error: "Invalid body" }, { status: error instanceof BodyTooLarge ? 413 : 400, headers }); }
-  if (session.user.role !== "CHIEF_ORGANIZER" || !session.user.twoFactorEnabled) return Response.json({ error: "Forbidden" }, { status: 403, headers });
+  if (session.user.role !== "CHIEF_ORGANIZER") return Response.json({ error: "Forbidden" }, { status: 403, headers });
   const password = z.object({ password: z.string().min(1).max(128) }).safeParse(body);
   if (!password.success) return Response.json({ error: "Reauthentication required" }, { status: 400, headers });
   const now = BigInt(Date.now());

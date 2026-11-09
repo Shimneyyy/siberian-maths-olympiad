@@ -153,3 +153,6 @@ next-env.d.ts
 
 # Local development key material; never commit.
 .local/
+
+# Local task scripts, logs and scratch documentation
+/work/

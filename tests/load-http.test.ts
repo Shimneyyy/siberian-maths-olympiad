@@ -23,12 +23,12 @@ test("F03 5000 participants per year, 200 active sessions: scoped HTTP, attendan
       await db.consentRecord.createMany({ data: consents });
       for (const edition of editions) await db.participation.createMany({ data: chunk.map((u, i) => ({ editionId: edition.id, userId: u.id, format: edition.id === editions[0].id ? "ONSITE" as const : "REMOTE" as const, remoteZone: edition.id === editions[1].id ? "NSK" as const : null, editionVenueId: edition.id === editions[0].id ? (offset + i === 4999 ? foreign.id : site.id) : null, fullName: u.name, universityId: uni.id, universityName: uni.name, universityAbbreviation: uni.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consents[i].id })) });
     }
-    const staff = Array.from({ length: 100 }, () => ({ id: randomUUID(), email: `staff-${randomUUID()}@example.test`, name: "Учебный организатор нагрузки", role: "VENUE_ORGANIZER" as const, emailVerified: true, twoFactorEnabled: true }));
+    const staff = Array.from({ length: 100 }, () => ({ id: randomUUID(), email: `staff-${randomUUID()}@example.test`, name: "Учебный организатор нагрузки", role: "VENUE_ORGANIZER" as const, emailVerified: true }));
     await db.user.createMany({ data: staff });
     await db.venueStaffAssignment.createMany({ data: staff.map(u => ({ userId: u.id, editionId: editions[0].id, editionVenueId: site.id })) });
     const sessions = [...staff, ...people.slice(0, 100)].map(u => ({ userId: u.id, token: randomUUID() + randomUUID(), expiresAt: new Date(Date.now() + 3600000) }));
     await db.session.createMany({ data: sessions });
-    // Model already authenticated sessions. Login/scrypt/TOTP capacity is a separate workload.
+    // Model already authenticated sessions. Login/scrypt capacity is a separate workload.
     const cookies = await Promise.all(sessions.map(async s => (await serializeSignedCookie("better-auth.session_token", s.token, process.env.BETTER_AUTH_SECRET!)).split(";")[0]));
     const call = async (i: number) => {
       const started = performance.now();

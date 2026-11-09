@@ -1,7 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 export type StaffAction = "notifications:send" | "edition:manage" | "venues:manage" | "registrations:read" | "registrations:edit" | "attendance:write" | "results:publish" | "diplomas:publish" | "staff:manage";
 export class AccessDenied extends Error {
-  constructor(public readonly reason: "FORBIDDEN" | "MFA_REQUIRED") { super(reason); }
+  constructor(public readonly reason: "FORBIDDEN") { super(reason); }
 }
 
 // actorId must originate from a verified server-side session, never a request body.
@@ -10,7 +10,6 @@ export async function authorizeStaff(db: PrismaClient | Prisma.TransactionClient
   const actor = await db.user.findUnique({ where: { id: actorId } });
   let allowed = false;
   if (actor?.emailVerified && actor.role !== "STUDENT") {
-    if (!actor.twoFactorEnabled) throw new AccessDenied("MFA_REQUIRED");
     if (actor.role === "CHIEF_ORGANIZER") {
       const grant = await db.editionStaffGrant.findUnique({ where: { userId_editionId: { userId: actor.id, editionId } } });
       allowed = !!grant && !grant.revokedAt;

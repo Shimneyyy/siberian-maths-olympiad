@@ -8,7 +8,6 @@ type DB = PrismaClient | Prisma.TransactionClient;
 export async function authorizeAdmin(db: DB, actorId: string) {
   const actor = await db.user.findUnique({ where: { id: actorId } });
   if (!actor?.emailVerified || actor.role !== "TECHNICAL_ADMIN") throw new AccessDenied("FORBIDDEN");
-  if (!actor.twoFactorEnabled) throw new AccessDenied("MFA_REQUIRED");
 }
 export class AdminRateLimit extends Error {}
 // Rate counters and denied audits commit outside the mutation transaction.

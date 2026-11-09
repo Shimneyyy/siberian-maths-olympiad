@@ -18,7 +18,7 @@ async function main() {
       await tx.session.deleteMany({ where: { userId: user.id } });
       await tx.auditEvent.create({ data: { action: "TECHNICAL_ADMIN_BOOTSTRAPPED", objectType: "User", objectId: user.id, outcome: "SUCCESS" } });
     });
-    console.log("Administrator prepared. Recover password, verify email and enroll TOTP. No password generated.");
+    console.log("Administrator prepared. Recover password, verify email. No password generated.");
   } finally { await db.$disconnect(); }
 }
 main().catch(() => { console.error("Administrator bootstrap failed: check synthetic account and singleton/single-role requirements."); process.exitCode = 1; });

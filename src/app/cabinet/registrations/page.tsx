@@ -8,7 +8,7 @@ import { RegistrationsTable } from "@/components/registrations-table";
 export const dynamic = "force-dynamic";
 export default async function Registrations() {
   const { user } = await requireSession();
-  if (!["CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") || !user.twoFactorEnabled) redirect("/cabinet");
+  if (!["CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "")) redirect("/cabinet");
   const options = await registrationsOptions(db, user.id);
   const first = options.editions[0];
   let initial = null;

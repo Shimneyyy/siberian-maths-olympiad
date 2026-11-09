@@ -26,8 +26,8 @@ async function fixture() {
       await tx.studentProfile.create({ data: { userId: user.id, fullName: user.name, universityId: university.id, courseId: course.id } });
       participations.push(await tx.participation.create({ data: { userId: user.id, editionId: i === 8 ? next.id : edition.id, format: "REMOTE", remoteZone: "NSK", fullName: user.name, universityId: university.id, universityName: university.name, universityAbbreviation: university.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consent.id } }));
     }
-    const staff = await tx.user.create({ data: { name: "Учебный организатор команды", email: `${randomUUID()}@example.test`, emailVerified: true, role: "VENUE_ORGANIZER", twoFactorEnabled: true } });
-    const chief = await tx.user.create({ data: { name: "Учебный главный отмены", email: `${randomUUID()}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER", twoFactorEnabled: true } });
+    const staff = await tx.user.create({ data: { name: "Учебный организатор команды", email: `${randomUUID()}@example.test`, emailVerified: true, role: "VENUE_ORGANIZER" } });
+    const chief = await tx.user.create({ data: { name: "Учебный главный отмены", email: `${randomUUID()}@example.test`, emailVerified: true, role: "CHIEF_ORGANIZER" } });
     await tx.account.create({ data: { userId: chief.id, accountId: chief.id, providerId: "credential", password: await hashPassword("Synthetic-cancellation-password") } });
     await tx.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     return { uni, otherUni, course, edition, next, users, participations, staff, chief };
@@ -217,7 +217,7 @@ test("captain cancellation atomically dissolves only that team and leaves the ot
   assert.ok(!JSON.stringify(audit).includes(f.users[1].name));
 });
 
-test("manual closure blocks student cancellation; assigned chief needs MFA, reason and password afterwards", async () => {
+test("manual closure blocks student cancellation; assigned chief needs verified email, reason and password afterwards", async () => {
   const { cancelParticipation } = await import("../src/lib/cancellation");
   const data = { editionId: f.edition.id, participationId: f.participations[0].id, revision: 0, confirmed: true };
   const chief = { ...data, reason: "Учебная причина отмены", password: "Synthetic-cancellation-password" };
@@ -226,9 +226,9 @@ test("manual closure blocks student cancellation; assigned chief needs MFA, reas
   await assert.rejects(cancelParticipation(db, f.users[0].id, data), AccessDenied);
   await assert.rejects(cancelParticipation(db, f.chief.id, data), AccessDenied);
   await assert.rejects(cancelParticipation(db, f.chief.id, { ...chief, password: "wrong" }), AccessDenied);
-  await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: false } });
+  await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: false } });
   try { await assert.rejects(cancelParticipation(db, f.chief.id, chief), AccessDenied); }
-  finally { await db.user.update({ where: { id: f.chief.id }, data: { twoFactorEnabled: true } }); }
+  finally { await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: true } }); }
   await cancelParticipation(db, f.chief.id, chief);
   assert.equal((await db.participation.findUniqueOrThrow({ where: { id: data.participationId } })).status, "CANCELLED");
   const audit = await db.auditEvent.findFirstOrThrow({ where: { actorId: f.chief.id, objectId: data.participationId, action: "PARTICIPATION_CANCELLED" } });

@@ -14,7 +14,7 @@ async function author(db: PrismaClient | Prisma.TransactionClient, actorId: stri
 }
 export async function announcementOptions(db: PrismaClient, actorId: string) {
   const user = await db.user.findUniqueOrThrow({ where: { id: actorId } });
-  if (!user.emailVerified || user.role !== "CHIEF_ORGANIZER" || !user.twoFactorEnabled) throw new AccessDenied("FORBIDDEN");
+  if (!user.emailVerified || user.role !== "CHIEF_ORGANIZER") throw new AccessDenied("FORBIDDEN");
   return db.olympiadEdition.findMany({ where: { staffGrants: { some: { userId: actorId, revokedAt: null } } }, orderBy: { year: "desc" }, select: { id: true, year: true, venues: { select: { id: true, label: true, venue: { select: { name: true } } } } } });
 }
 export async function announcementsView(db: PrismaClient, actorId: string, raw: unknown) {

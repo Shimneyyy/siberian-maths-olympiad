@@ -7,7 +7,7 @@ import { EditionManager } from "@/components/edition-manager";
 export const dynamic = "force-dynamic";
 export default async function Organization() {
   const { user } = await requireSession();
-  if (user.role !== "CHIEF_ORGANIZER" || !user.twoFactorEnabled) redirect("/cabinet");
+  if (user.role !== "CHIEF_ORGANIZER") redirect("/cabinet");
   const editions = await organizerOlympiadView(db, user.id);
   return <main className="mx-auto max-w-3xl space-y-8 px-6 py-12"><Link href="/cabinet" className="text-primary">← Личный кабинет</Link><h1 className="text-3xl font-semibold">Годы и площадки олимпиады</h1><EditionManager editions={editions} /></main>;
 }

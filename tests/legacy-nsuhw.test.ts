@@ -17,7 +17,7 @@ let chief:string,student:string,second:string,edition:string,foreign:string;
 before(async()=>{
  await sql.connect();await sql.query(`CREATE SCHEMA "${schema}"`);await sql.query(`SET search_path TO "${schema}"`);
  for(const m of (await readdir("prisma/migrations")).filter(x=>/^\d/.test(x)).sort())await sql.query(await readFile(`prisma/migrations/${m}/migration.sql`,"utf8"));
- const create=async(role:"STUDENT"|"CHIEF_ORGANIZER")=>db.user.create({data:{name:"Учебный аккаунт",email:`${randomUUID()}@example.test`,role,emailVerified:true,twoFactorEnabled:role!=="STUDENT"}});
+ const create=async(role:"STUDENT"|"CHIEF_ORGANIZER")=>db.user.create({data:{name:"Учебный аккаунт",email:`${randomUUID()}@example.test`,role,emailVerified:true}});
  chief=(await create("CHIEF_ORGANIZER")).id;student=(await create("STUDENT")).id;second=(await create("STUDENT")).id;
  edition=(await db.olympiadEdition.create({data:{year:8200,title:"Учебная сверка"}})).id;
  foreign=(await db.olympiadEdition.create({data:{year:8201,title:"Другой год"}})).id;
@@ -64,16 +64,16 @@ test("duplicate pending logins reveal no link, but one external login cannot be 
  await assert.rejects(approveLegacyNsuhw(db,chief,{editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password}));
  assert.equal((await legacyNsuhwView(db,second))?.approvedAt,null);
 });
-test("year scope, role, email, MFA, password and revocation protect moderation; audit contains no login",async()=>{
+test("year scope, role, email, verified email, password and revocation protect moderation; audit contains no login",async()=>{
  await db.rateLimit.deleteMany();const claim=await legacyNsuhwView(db,second);assert.ok(claim);
  const input={editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password};
  await assert.rejects(legacyNsuhwReviewList(db,student,{editionId:edition}));
  await assert.rejects(legacyNsuhwReviewList(db,chief,{editionId:foreign}));
  await assert.rejects(approveLegacyNsuhw(db,student,input));
  await assert.rejects(approveLegacyNsuhw(db,chief,{...input,password:"wrong"}));
- await db.user.update({where:{id:chief},data:{twoFactorEnabled:false}});
+ await db.user.update({where:{id:chief},data:{emailVerified:false}});
  await assert.rejects(approveLegacyNsuhw(db,chief,input));
- await db.user.update({where:{id:chief},data:{twoFactorEnabled:true}});
+ await db.user.update({where:{id:chief},data:{emailVerified:true}});
  await db.user.update({where:{id:second},data:{emailVerified:false}});
  assert.ok(!(await legacyNsuhwReviewList(db,chief,{editionId:edition})).some(x=>x.id===claim.id));
  await assert.rejects(approveLegacyNsuhw(db,chief,input));

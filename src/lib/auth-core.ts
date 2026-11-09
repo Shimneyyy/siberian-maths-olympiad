@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { emailOTP, twoFactor } from "better-auth/plugins";
+import { emailOTP } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { registrationSchema, assertDemoRegistration } from "./registration-rules";
@@ -38,11 +38,8 @@ export function createAuth(database: PrismaClient | Prisma.TransactionClient, se
           await send({ to: email, subject: "Подтверждение email в ЛК СМО", text: `Код подтверждения: ${otp}\nКод действует 10 минут. Никому не сообщайте его.` });
         },
       }),
-      twoFactor({ issuer: "СМО", backupCodeOptions: { storeBackupCodes: "encrypted" } }),
     ],
     hooks: { before: createAuthMiddleware(async (ctx) => {
-      if (ctx.path === "/two-factor/enable" && ctx.body?.method && ctx.body.method !== "totp") throw new APIError("FORBIDDEN", { message: "Only authenticator-app TOTP is supported" });
-      if (ctx.path.startsWith("/two-factor/") && ctx.body?.trustDevice === true) throw new APIError("FORBIDDEN", { message: "Remembered MFA devices are not enabled" });
       if (ctx.path === "/sign-up/email") {
         const parsed = registrationSchema.safeParse(ctx.body);
         if (!parsed.success) throw new APIError("BAD_REQUEST", { message: "Проверьте поля регистрации и учебное согласие" });

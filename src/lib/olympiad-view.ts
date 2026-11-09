@@ -35,7 +35,6 @@ export async function studentOlympiadView(db: PrismaClient, actorId: string) {
 export async function organizerOlympiadView(db: PrismaClient, actorId: string) {
   const user = await db.user.findUnique({ where: { id: actorId } });
   if (!user?.emailVerified || user.role !== "CHIEF_ORGANIZER") throw new AccessDenied("FORBIDDEN");
-  if (!user.twoFactorEnabled) throw new AccessDenied("MFA_REQUIRED");
   const editions = await db.olympiadEdition.findMany({ where: { staffGrants: { some: { userId: actorId, revokedAt: null } } },
     orderBy: { year: "desc" }, include: { venues: { orderBy: { id: "asc" }, include: { venue: { select: { name: true } } } } },
   });

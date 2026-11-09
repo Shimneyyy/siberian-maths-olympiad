@@ -11,9 +11,9 @@ import { registrationsOptions } from "../src/lib/registrations";
 import { saveEdition } from "../src/lib/olympiad";
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 after(() => db.$disconnect());
-test("admin global schedule and chief lifecycle require MFA/password; roles and history survive revocation", async () => {
+test("admin global schedule and chief lifecycle require verified email/password; roles and history survive revocation", async () => {
   const password = "Synthetic-admin-password", tag = randomUUID();
-  const create = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER" | "TECHNICAL_ADMIN") => db.user.create({ data: { name: "Учебный аккаунт", email: `${role.toLowerCase()}-${tag}@example.test`, role, emailVerified: true, twoFactorEnabled: true } });
+  const create = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER" | "TECHNICAL_ADMIN") => db.user.create({ data: { name: "Учебный аккаунт", email: `${role.toLowerCase()}-${tag}@example.test`, role, emailVerified: true } });
   const admin = await create("TECHNICAL_ADMIN"), chief = await create("CHIEF_ORGANIZER"), student = await create("STUDENT"), staff = await create("VENUE_ORGANIZER");
   const users = [admin.id, chief.id, student.id, staff.id];
   const e = await db.olympiadEdition.create({ data: { year: 6700, title: "Учебный год" } });
@@ -26,9 +26,9 @@ test("admin global schedule and chief lifecycle require MFA/password; roles and 
       await assert.rejects(manageChief(db, user.id, input), AccessDenied);
       await assert.rejects(saveRegistrationWindow(db, user.id, schedule), AccessDenied);
     }
-    await db.user.update({ where: { id: admin.id }, data: { twoFactorEnabled: false } });
+    await db.user.update({ where: { id: admin.id }, data: { emailVerified: false } });
     await assert.rejects(manageChief(db, admin.id, input), AccessDenied);
-    await db.user.update({ where: { id: admin.id }, data: { twoFactorEnabled: true } });
+    await db.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
     await assert.rejects(manageChief(db, admin.id, { ...input, password: "wrong" }), AccessDenied);
     await manageChief(db, admin.id, input);
     await authorizeStaff(db, chief.id, "registrations:read", e.id);
@@ -51,7 +51,7 @@ test("admin global schedule and chief lifecycle require MFA/password; roles and 
     const replacement = await db.user.findUniqueOrThrow({ where: { email: `replacement-${tag}@example.test` } }); users.push(replacement.id);
     await assert.rejects(authorizeStaff(db, chief.id, "registrations:read", other.id), AccessDenied);
     await assert.rejects(authorizeStaff(db, replacement.id, "registrations:read", other.id), AccessDenied);
-    await db.user.update({ where: { id: replacement.id }, data: { emailVerified: true, twoFactorEnabled: true } });
+    await db.user.update({ where: { id: replacement.id }, data: { emailVerified: true } });
     await authorizeStaff(db, replacement.id, "registrations:read", other.id);
     const audit = await db.auditEvent.findMany({ where: { actorId: admin.id } });
     assert.ok(audit.some(x => x.action === "REGISTRATION_WINDOW_UPDATED"));

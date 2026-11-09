@@ -33,7 +33,7 @@ export async function olympiadRequest(request: Request, operation: (actorId: str
     if (error instanceof APIError || error instanceof AccessDenied) {
       const scope = z.object({ editionId: z.uuid() }).safeParse(body);
       if (scope.success) await db.auditEvent.create({ data: { actorId: session.user.id, action: "ACCESS_DENIED", objectType: "OlympiadEdition", objectId: scope.data.editionId, editionId: scope.data.editionId, outcome: "DENIED" } });
-      return Response.json({ error: error instanceof AccessDenied && error.reason === "MFA_REQUIRED" ? "Сначала настройте TOTP" : "Действие недоступно" }, { status: 403, headers });
+      return Response.json({ error: "Действие недоступно" }, { status: 403, headers });
     }
     if (error instanceof OlympiadError) return Response.json({ error: error.message, code: error.code }, { status: error.code === "NOT_FOUND" ? 404 : 409, headers });
     if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2003", "P2034"].includes(error.code)) return Response.json({ error: "Конфликт данных. Обновите страницу и повторите действие." }, { status: 409, headers });

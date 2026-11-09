@@ -4,18 +4,10 @@ import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { chromium } from "playwright";
-import { randomUUID, createHmac } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-function totp(uri: string) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const bits = [...new URL(uri).searchParams.get("secret")!].map(c => chars.indexOf(c).toString(2).padStart(5,"0")).join("");
-  const key = Buffer.from(bits.match(/.{8}/g)!.map(x => parseInt(x,2)));
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));
-  const digest = createHmac("sha1",key).update(counter).digest();
-  return String((digest.readUInt32BE(digest[digest.length-1]&15)&0x7fffffff)%1000000).padStart(6,"0");
-}
 test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", { timeout: 180000 }, async () => {
   const base = process.env.TEST_BASE_URL!;
   assert.ok(["localhost","127.0.0.1"].includes(new URL(base).hostname));
@@ -40,9 +32,6 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
       assert.equal((await post(ctx,"auth/sign-in/email",{ email: user.email, password })).status(),200);
     }
     const input = { editionId: edition.id, editionVenueId: null, title: "Учебная публикация", body: "<script>не исполняется</script>", important: true, password };
-    assert.equal((await post(writer,"announcements",input)).status(),403);
-    const factor = await (await post(writer,"auth/two-factor/enable",{password,method:"totp"})).json();
-    assert.equal((await post(writer,"auth/two-factor/verify-totp",{code:totp(factor.totpURI),trustDevice:false})).status(),200);
     assert.equal((await post(writer,"announcements",input,"https://untrusted.invalid")).status(),403);
     assert.equal((await post(writer,"announcements",{...input,editionId:other.id})).status(),403);
     assert.equal((await post(recipient,"announcements",input)).status(),403);

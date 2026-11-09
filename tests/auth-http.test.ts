@@ -4,7 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import assert from "node:assert/strict";
 import { hashPassword } from "better-auth/crypto";
-import { randomUUID, createHmac } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 const base = process.env.TEST_BASE_URL;
 if (!base || !["localhost", "127.0.0.1"].includes(new URL(base).hostname)) throw new Error("TEST_BASE_URL must point to a local demo server");
@@ -35,17 +35,6 @@ async function mail(email: string, subject: string) {
   return message.Text;
 }
 
-function totp(uri: string) {
-  const encoded = new URL(uri).searchParams.get("secret"); assert.ok(encoded);
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = "";
-  for (const char of encoded.replace(/=+$/, "")) bits += alphabet.indexOf(char.toUpperCase()).toString(2).padStart(5, "0");
-  const secret = Buffer.from(bits.match(/.{8}/g)!.map((x) => parseInt(x, 2)));
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const digest = createHmac("sha1", secret).update(counter).digest();
-  const offset = digest[digest.length - 1] & 15;
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");
-}
 
 test("HTTP registration, email proof, sessions, reset and CSRF boundaries", async () => {
   const email = `auth-${randomUUID()}@example.test`;
@@ -101,23 +90,12 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
     assert.notEqual((await request("/api/auth/reset-password", { token, newPassword: password })).status, 200, "Reset token is single-use");
     assert.notEqual((await request("/api/auth/sign-in/email", { email, password })).status, 200);
     assert.equal((await request("/api/auth/sign-in/email", { email, password: replacement })).status, 200);
-    const setup = await request("/api/auth/two-factor/enable", { password: replacement, method: "totp" });
-    assert.equal(setup.status, 200);
-    const factor = await setup.json() as { totpURI: string; backupCodes: string[] };
-    assert.ok(factor.totpURI.startsWith("otpauth://"));
-    assert.ok(factor.backupCodes.length > 0);
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
-    assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).twoFactorEnabled, true);
-    const protectedFactor = await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } });
-    assert.ok(!protectedFactor.backupCodes.includes(factor.backupCodes[0]));
     assert.equal((await request("/api/staff", { editionId: randomUUID(), editionVenueId: randomUUID(), email: `other-${randomUUID()}@example.test`, name: "Другой синтетический пользователь" })).status, 403);
     assert.equal((await request("/api/auth/sign-out", {})).status, 200);
     const challenge = await request("/api/auth/sign-in/email", { email, password: replacement });
     assert.equal(challenge.status, 200);
-    assert.equal((await challenge.json() as { twoFactorRedirect?: boolean }).twoFactorRedirect, true);
-    assert.equal((await request("/api/me")).status, 401, "Password alone does not create a usable MFA session");
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
-    assert.equal((await request("/api/me")).status, 200);
+    assert.equal("twoFactorRedirect" in await challenge.json(), false);
+    assert.equal((await request("/api/me")).status, 200, "Verified email and password create the session");
     assert.equal((await request("/api/auth/sign-out", {})).status, 200);
     assert.equal((await request("/api/me")).status, 401);
     assert.equal((await request("/api/auth/sign-in/email-otp", { email, otp: "000000" })).status, 404, "Passwordless routes are not exposed");
@@ -136,7 +114,7 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
 });
 
 
-test("HTTP chief manages venue staff only with MFA and password reauthentication", async () => {
+test("HTTP chief manages venue staff only with verified email and password reauthentication", async () => {
   cookies.clear();
   await db.rateLimit.deleteMany();
   const tag = randomUUID();
@@ -151,11 +129,6 @@ test("HTTP chief manages venue staff only with MFA and password reauthentication
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     assert.equal((await request("/api/auth/sign-in/email", { email: chief.email, password })).status, 200);
     const payload = { email: targetEmail, name: "Синтетический организатор площадки", editionId: edition.id, editionVenueId: site.id, password };
-    assert.equal((await request("/api/staff", payload)).status, 403, "Chief must enroll MFA first");
-    const enrollment = await request("/api/auth/two-factor/enable", { password, method: "totp" });
-    assert.equal(enrollment.status, 200);
-    const factor = await enrollment.json() as { totpURI: string };
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
     assert.equal((await request("/api/staff", { ...payload, password: "Wrong-password" })).status, 403);
     assert.equal(await db.user.findUnique({ where: { email: targetEmail } }), null);
     assert.equal((await request("/api/staff", payload)).status, 200);
@@ -208,17 +181,11 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     }
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     assert.equal((await request("/api/auth/sign-in/email", { email: chief.email, password })).status, 200);
-    const enrollment = await request("/api/auth/two-factor/enable", { password, method: "totp" });
-    const factor = await enrollment.json() as { totpURI: string };
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
     const chiefCookies = new Map(cookies);
     const settings = { editionId: edition.id, revision: 0, title: edition.title, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, isCurrent: true };
     assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
     cookies.clear();
     assert.equal((await request("/api/auth/sign-in/email", { email: admin.email, password })).status, 200);
-    const adminEnrollment = await (await request("/api/auth/two-factor/enable", { password, method: "totp" })).json() as { totpURI: string };
-    assert.equal((await request("/api/admin/schedule", { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, password })).status, 403);
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(adminEnrollment.totpURI), trustDevice: false })).status, 200);
     const adminCookies = new Map(cookies);
     const windowInput = { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, password };
     assert.equal((await request("/api/admin/schedule", { ...windowInput, password: "wrong" })).status, 403);
@@ -313,9 +280,6 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     await db.venueStaffAssignment.create({ data: { userId: staff.id, editionId: edition.id, editionVenueId: site.id } });
     cookies.clear();
     assert.equal((await request("/api/auth/sign-in/email", { email: staff.email, password })).status, 200);
-    assert.equal((await request("/api/registrations/search", rosterQuery)).status, 403, "MFA is required before reading participant data");
-    const staffEnrollment = await (await request("/api/auth/two-factor/enable", { password, method: "totp" })).json() as { totpURI: string };
-    assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(staffEnrollment.totpURI), trustDevice: false })).status, 200);
     const roster = await request("/api/registrations/search", rosterQuery);
     assert.equal(roster.status, 200);
     const list = await roster.json() as { total: number; rows: { fullName: string; email: string }[] };
@@ -400,7 +364,7 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
   }
 });
 
-test("externally created staff accounts require email proof, retain grants and MFA across recovery", async () => {
+test("externally created staff accounts require email proof and retain roles/grants across recovery", async () => {
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const { manageChief } = await import("../src/lib/admin");
@@ -462,11 +426,6 @@ test("externally created staff accounts require email proof, retain grants and M
       assert.equal((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
       assert.notEqual((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
       assert.equal((await request("/api/auth/sign-in/email", { email, password })).status, 200);
-      const enrollment = await request("/api/auth/two-factor/enable", { password, method: "totp" });
-      assert.equal(enrollment.status, 200);
-      const factor = await enrollment.json() as { totpURI: string };
-      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
-      const protectedFactor = await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } });
       const replacement = `Replacement-${tag}`;
       const oldCookies = [...cookies].map(([k,v]) => `${k}=${v}`).join("; ");
       await reset(email, replacement);
@@ -474,26 +433,24 @@ test("externally created staff accounts require email proof, retain grants and M
       cookies.clear();
       assert.notEqual((await request("/api/auth/sign-in/email", { email, password })).status, 200);
       const challenge = await request("/api/auth/sign-in/email", { email, password: replacement });
-      assert.equal((await challenge.json() as { twoFactorRedirect: boolean }).twoFactorRedirect, true);
-      assert.equal((await request("/api/me")).status, 401);
-      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
+      assert.equal(challenge.status, 200);
+      assert.equal((await request("/api/me")).status, 200);
       const preserved = await db.user.findUniqueOrThrow({ where: { email } });
-      assert.equal(preserved.role, user.role); assert.equal(preserved.twoFactorEnabled, true);
-      assert.deepEqual(await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } }), protectedFactor);
       if (i === 0) await manageChief(db, user.id, { editionId: edition.id, email: emails[1], name: "Учебный главный", operation: "assign", password: replacement });
       if (i === 1) {
         assert.equal(await db.editionStaffGrant.count({ where: { userId: user.id, editionId: edition.id, revokedAt: null } }), 1);
         await assignVenueStaff(db, user.id, { editionId: edition.id, editionVenueId: site.id, email: emails[2], name: "Учебный организатор" });
       }
       if (i === 2) assert.equal(await db.venueStaffAssignment.count({ where: { userId: user.id, editionVenueId: site.id, revokedAt: null } }), 1);
-      // An expired reset must neither replace the password nor clear MFA.
+      assert.equal(preserved.role, user.role);
+      // An expired reset must not replace the password.
       await db.rateLimit.deleteMany();
       await request("/api/auth/request-password-reset", { email, redirectTo: "/reset-password" });
       await db.verification.updateMany({ where: { value: user.id }, data: { expiresAt: new Date(0) } });
       const expiredLink = (await mail(email, "Восстановление")).match(/https?:\/\/\S+/)?.[0]; assert.ok(expiredLink);
       const expiredToken = new URL(expiredLink).pathname.split("/").pop();
       assert.notEqual((await request("/api/auth/reset-password", { token: expiredToken, newPassword: password })).status, 200);
-      assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).twoFactorEnabled, true);
+      assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).emailVerified, true);
     }
   } finally {
     cookies.clear();
@@ -542,69 +499,29 @@ test("HTTP new signup stores Latin login names independently and enforces both s
  }
 });
 
-test("backup-code browser login requires password challenge, rejects foreign/reused codes and preserves MFA", async () => {
-  const { chromium } = await import("playwright");
+test("retired second-factor routes are unavailable to guests and signed-in users", async () => {
   cookies.clear(); await db.rateLimit.deleteMany();
-  const password = `Synthetic-backup-${randomUUID()}`;
-  const users: string[] = [], factors: { totpURI: string; backupCodes: string[] }[] = [];
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  const user = await db.user.create({ data: { email: `retired-${randomUUID()}@example.test`, name: "Учебный вход без второго фактора", role: "CHIEF_ORGANIZER", emailVerified: true } });
+  const password = `Synthetic-${randomUUID()}`;
   try {
-    for (const role of ["CHIEF_ORGANIZER", "STUDENT"] as const) {
-      cookies.clear();
-      const user = await db.user.create({ data: { email: `backup-${randomUUID()}@example.test`, name: "Учебный резервный вход", role, emailVerified: true } });
-      users.push(user.id);
-      await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: await hashPassword(password) } });
-      assert.equal((await request("/api/auth/sign-in/email", { email: user.email, password })).status, 200);
-      const factor = await (await request("/api/auth/two-factor/enable", { password })).json() as { totpURI: string; backupCodes: string[] };
-      factors.push(factor);
-      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
-      assert.equal((await request("/api/auth/sign-out", {})).status, 200);
+    await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: await hashPassword(password) } });
+    for (const signedIn of [false, true]) {
+      if (signedIn) {
+        const login = await request("/api/auth/sign-in/email", { email: user.email, password });
+        assert.equal(login.status, 200);
+        assert.equal("twoFactorRedirect" in await login.json(), false);
+        const me = await request("/api/me"); assert.equal(me.status, 200);
+        assert.equal("twoFactorEnabled" in (await me.json()).user, false);
+        assert.equal((await request("/api/registrations/search", { editionId: randomUUID() })).status, 403, "Password login grants no year assignments");
+        const cabinet = await (await request("/cabinet")).text();
+        assert.ok(!cabinet.includes("Настроить TOTP") && !cabinet.includes("Резервный код"));
+      }
+      for (const path of ["enable", "disable", "verify-totp", "verify-backup-code", "generate-backup-codes", "get-totp-uri", "send-otp", "verify-otp"]) {
+        const response = await request(`/api/auth/two-factor/${path}`, { password, code: "000000" });
+        assert.equal(response.status, 404); assert.ok(response.headers.get("cache-control")?.includes("no-store"));
+        assert.equal((await request(`/api/auth/two-factor/${path}`)).status, 404);
+      }
+      assert.equal((await request("/two-factor")).status, 404);
     }
-    cookies.clear();
-    assert.notEqual((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status, 200, "Code without a password challenge is rejected");
-    const user = await db.user.findUniqueOrThrow({ where: { id: users[0] } });
-    assert.equal((await request("/api/auth/sign-in/email", { email: user.email, password })).status, 200);
-    assert.equal((await request("/api/me")).status, 401);
-    assert.notEqual((await request("/api/auth/two-factor/verify-backup-code", { code: factors[1].backupCodes[0] })).status, 200, "Another owner's code is rejected");
-    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] }, true, "https://untrusted.invalid")).status, 403);
-    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0], trustDevice: true })).status, 403);
-    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status, 429, "Backup verification is rate limited");
-    // Separate the throttling scenario from the valid-login scenario in this local fixture DB.
-    await db.rateLimit.deleteMany();
-    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
-    const context = await browser.newContext();
-    await context.addCookies([...cookies].map(([name,value]) => ({ name, value, url: base! })));
-    const page = await context.newPage();
-    await page.goto(`${base}/two-factor`);
-    await page.getByRole("button", { name: "Использовать резервный код", exact: true }).click();
-    await page.getByLabel("Резервный код", { exact: true }).fill(factors[0].backupCodes[0]);
-    const [verified] = await Promise.all([
-      page.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/two-factor/verify-backup-code"),
-      page.getByRole("button", { name: "Продолжить", exact: true }).click(),
-    ]);
-    assert.equal(verified.status(), 200); assert.ok(verified.headers()["cache-control"].includes("no-store"));
-    await page.waitForURL(`${base}/cabinet`);
-    const own = await context.request.get(`${base}/api/me`); assert.equal(own.status(), 200);
-    assert.equal((await own.json()).user.id, user.id);
-    for (const code of factors[0].backupCodes) {
-      assert.ok(!page.url().includes(code), "No backup code in URL");
-      assert.ok(!(await page.content()).includes(code), "No backup code after login");
-    }
-    assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
-    const post = (path: string, data: unknown) => context.request.post(`${base}${path}`, { headers: { Origin: origin }, data });
-    await post("/api/auth/sign-out", {});
-    await post("/api/auth/sign-in/email", { email: user.email, password });
-    assert.notEqual((await post("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status(), 200, "Used code cannot be replayed after a new password challenge");
-    assert.equal((await context.request.get(`${base}/api/me`)).status(), 401);
-    assert.equal((await post("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[1], trustDevice: false })).status(), 200);
-    const preserved = await db.user.findUniqueOrThrow({ where: { id: user.id } });
-    assert.equal(preserved.role, "CHIEF_ORGANIZER"); assert.equal(preserved.twoFactorEnabled, true);
-    const factorRow = await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } });
-    assert.ok(!factors[0].backupCodes.some(code => factorRow.backupCodes.includes(code)));
-    assert.equal(await db.editionStaffGrant.count({ where: { userId: user.id } }), 0, "Backup login grants no extra permissions");
-  } finally {
-    await browser?.close(); cookies.clear();
-    await db.user.deleteMany({ where: { id: { in: users } } });
-    await db.rateLimit.deleteMany();
-  }
+  } finally { cookies.clear(); await db.auditEvent.deleteMany({ where: { actorId: user.id } }); await db.user.delete({ where: { id: user.id } }); await db.rateLimit.deleteMany(); }
 });

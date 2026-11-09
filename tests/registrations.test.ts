@@ -13,9 +13,9 @@ async function setup() {
     const course = await tx.courseOption.create({ data: { label: "Текущий справочник курсов" } });
     const editions = [];
     for (const year of [6600,6601,6602]) editions.push(await tx.olympiadEdition.create({ data: { year, title: `Учебный выпуск ${year}` } }));
-    const user = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER", mfa = true) => tx.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Синтетический пользователь", role, emailVerified: true, twoFactorEnabled: mfa } });
-    const chief = await user("CHIEF_ORGANIZER"), staff = await user("VENUE_ORGANIZER"), otherStaff = await user("VENUE_ORGANIZER"), student = await user("STUDENT"), noMfa = await user("CHIEF_ORGANIZER", false);
-    const actorIds = [chief.id, staff.id, otherStaff.id, student.id, noMfa.id];
+    const user = (role: "STUDENT" | "CHIEF_ORGANIZER" | "VENUE_ORGANIZER", verified = true) => tx.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Синтетический пользователь", role, emailVerified: verified } });
+    const chief = await user("CHIEF_ORGANIZER"), staff = await user("VENUE_ORGANIZER"), otherStaff = await user("VENUE_ORGANIZER"), student = await user("STUDENT"), unverified = await user("CHIEF_ORGANIZER", false);
+    const actorIds = [chief.id, staff.id, otherStaff.id, student.id, unverified.id];
     await tx.editionStaffGrant.create({ data: { userId: chief.id, editionId: editions[0].id } });
     const sites = [];
     for (const [index, edition] of [editions[0], editions[0], editions[0], editions[1], editions[2]].entries()) {
@@ -37,7 +37,7 @@ async function setup() {
     for (let i=0;i<2;i++) await create(editions[0].id, null, `Дистанционный ${i}`, "Дистанционный вуз", "Дистанционный курс");
     for (let i=0;i<2;i++) await create(editions[1].id, sites[3].id, `Исторический ${i}`, "Вуз другого года", "Исторический курс");
     await create(editions[2].id, sites[4].id, "Недоступный год", "Недоступный вуз", "Недоступный курс");
-    return { university, course, editions, chief, staff, otherStaff, student, noMfa, actorIds, participantIds, sites, aIds };
+    return { university, course, editions, chief, staff, otherStaff, student, unverified, actorIds, participantIds, sites, aIds };
   }, { timeout: 15000 });
 }
 let f: Awaited<ReturnType<typeof setup>>;
@@ -79,9 +79,9 @@ test("rows, totals and filter values all respect the same scope", async () => {
   const historical = await listRegistrations(db, f.staff.id, { editionId: f.editions[1].id });
   assert.equal(historical.total,2); assert.equal(historical.filters.universityNames[0],"Вуз другого года");
 });
-test("students, missing MFA, foreign years/sites and revoked grants cannot fetch a roster", async () => {
+test("students, unverified email, foreign years/sites and revoked grants cannot fetch a roster", async () => {
   await assert.rejects(listRegistrations(db, f.student.id, { editionId: f.editions[0].id }), AccessDenied);
-  await assert.rejects(listRegistrations(db, f.noMfa.id, { editionId: f.editions[0].id }), (e: unknown) => e instanceof AccessDenied && e.reason==="MFA_REQUIRED");
+  await assert.rejects(listRegistrations(db, f.unverified.id, { editionId: f.editions[0].id }), (e: unknown) => e instanceof AccessDenied && e.reason==="FORBIDDEN");
   await assert.rejects(listRegistrations(db, f.staff.id, { editionId: f.editions[2].id }), AccessDenied);
   await assert.rejects(listRegistrations(db, f.chief.id, { editionId: f.editions[1].id }), AccessDenied);
   await assert.rejects(listRegistrations(db, f.staff.id, { editionId: f.editions[0].id, editionVenueId: f.sites[2].id }), AccessDenied);
@@ -128,7 +128,7 @@ test("CSV export applies server scope and filters across all pages and audits no
   assert.equal(filtered.trimEnd().split("\r\n").length, 2);
   assert.ok(filtered.includes("Участие отменено"));
   assert.equal((await exportRegistrations(db, f.chief.id, { editionId: f.editions[0].id, format: "REMOTE" })).trimEnd().split("\r\n").length, 3);
-  for (const actor of [f.student, f.noMfa]) await assert.rejects(exportRegistrations(db, actor.id, query), AccessDenied);
+  for (const actor of [f.student, f.unverified]) await assert.rejects(exportRegistrations(db, actor.id, query), AccessDenied);
   await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, editionVenueId: f.sites[2].id }), AccessDenied);
   await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, editionId: f.editions[2].id }), AccessDenied);
   await assert.rejects(exportRegistrations(db, f.staff.id, { ...query, rows: [] }));
@@ -157,10 +157,10 @@ test("CSV neutralizes formulas, leading controls, whitespace and quoted multilin
 });
 
 
-test("attendance requires scope/MFA and revision; concurrent edits conflict and audit has no personal data", async () => {
+test("attendance requires scope/email and revision; concurrent edits conflict and audit has no personal data", async () => {
   const { markAttendance } = await import("../src/lib/attendance");
   const input = { editionId: f.editions[0].id, participationId: f.aIds[0], revision: 0, status: "PRESENT" };
-  for (const actor of [f.student, f.noMfa, f.otherStaff]) await assert.rejects(markAttendance(db, actor.id, input), AccessDenied);
+  for (const actor of [f.student, f.unverified, f.otherStaff]) await assert.rejects(markAttendance(db, actor.id, input), AccessDenied);
   await assert.rejects(markAttendance(db, f.staff.id, { ...input, editionId: f.editions[1].id }), AccessDenied);
   await assert.rejects(markAttendance(db, f.staff.id, { ...input, actorId: f.chief.id }));
   const results = await Promise.allSettled([markAttendance(db, f.staff.id, input), markAttendance(db, f.chief.id, { ...input, status: "ABSENT" })]);
