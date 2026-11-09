@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { auditRetention, markWithdrawalReviewed, requireDemoOperator } from "../src/lib/data-lifecycle";
+async function main() {
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 try {
   requireDemoOperator(); const [command, ...args] = process.argv.slice(2);
@@ -11,3 +12,6 @@ try {
   else throw new Error("Invalid command");
 } catch { console.error("Учебное обслуживание недоступно: проверьте команду и локальную конфигурацию. Секреты не выводятся."); process.exitCode = 1; }
 finally { await db.$disconnect(); }
+
+}
+void main();

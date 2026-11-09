@@ -91,8 +91,10 @@ export async function listRegistrations(db: PrismaClient, actorId: string, raw: 
         editionVenue: { select: { label: true, active: true, venue: { select: { name: true } } } },
       },
     });
-    const universityNames = await tx.participation.findMany({ where: scope, distinct: ["universityName"], select: { universityName: true }, orderBy: { universityName: "asc" } });
-    const courseLabels = await tx.participation.findMany({ where: scope, distinct: ["courseLabel"], select: { courseLabel: true }, orderBy: { courseLabel: "asc" } });
+    // Aggregate facets in PostgreSQL: Prisma findMany/distinct can load every row
+    // into the application, repeated on each poll by each organizer.
+    const universityNames = await tx.participation.groupBy({ where: scope, by: ["universityName"], orderBy: { universityName: "asc" } });
+    const courseLabels = await tx.participation.groupBy({ where: scope, by: ["courseLabel"], orderBy: { courseLabel: "asc" } });
     const teamNames = await tx.team.findMany({ where: { editionId: input.editionId, members: { some: { participation: scope } } }, select: { id: true, name: true }, orderBy: [{ name: "asc" }, { id: "asc" }] });
     const edition = await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId }, select: { title: true, year: true } });
     return { editionId: input.editionId, editionTitle: edition.title, year: edition.year, page, pages, pageSize: input.pageSize, total,

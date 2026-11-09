@@ -50,9 +50,13 @@ jobs:
       - run: npm run test:db
       - run: docker compose --profile files up -d --wait clamav
       - run: npm run test:files
+      - run: npm run test:ops
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
       - run: npx playwright install --with-deps chromium
       - run: npm run test:http
       - run: npm run test:live
       - run: npm run test:communications
+      - run: npm run test:load
       - run: npm run build
       - run: npm run check:build

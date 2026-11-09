@@ -27,7 +27,12 @@
     "edition:create": "tsx scripts/create-edition.ts",
     "test:communications": "node scripts/test-http.mjs tests/communications-http.test.ts",
     "nsuhw:keys": "tsx scripts/nsuhw-keys.ts",
-    "data:lifecycle": "tsx scripts/data-lifecycle.ts"
+    "data:lifecycle": "tsx scripts/data-lifecycle.ts",
+    "backup:retention": "tsx scripts/backup-retention.ts",
+    "test:ops": "tsx --test --test-concurrency=1 tests/managed-backups.test.ts tests/restore-drill.test.ts",
+    "backup:create": "tsx scripts/create-demo-backup.ts",
+    "test:load": "node scripts/test-http.mjs tests/load-http.test.ts",
+    "backup:restore": "tsx scripts/restore-demo-backup.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
