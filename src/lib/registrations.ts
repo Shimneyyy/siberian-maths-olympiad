@@ -35,8 +35,10 @@ export async function registrationsScope(tx: Tx, actorId: string, editionId: str
     where: { userId: actorId, editionId, revokedAt: null }, select: { editionVenueId: true },
   });
   if (!assignments.length || (editionVenueId && !assignments.some((x) => x.editionVenueId === editionVenueId))) throw new AccessDenied("FORBIDDEN");
-  return { editionId, ...(editionVenueId ? { editionVenueId } : {}),
-    editionVenue: { assignments: { some: { userId: actorId, editionId, revokedAt: null } } } };
+  // These IDs came from the server-side assignment query above, in the same
+  // transaction snapshot as the roster/COUNT/facets. Avoid repeating the relation
+  // join for every aggregate and page query. Never accept this list from a client.
+  return { editionId, editionVenueId: editionVenueId ?? { in: assignments.map(a => a.editionVenueId) } };
 }
 export async function registrationsOptions(db: PrismaClient, actorId: string) {
   return db.$transaction(async (tx) => {

@@ -7,6 +7,7 @@ import { Client } from "pg";
 import { setTimeout } from "node:timers/promises";
 const target = process.argv[2] || "tests/auth-http.test.ts";
 if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-http.test.ts", "tests/load-http.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
+const productionLoad = target === "tests/load-http.test.ts";
 const port = 3100;
 const base = `http://localhost:${port}`;
 if (!process.env.BETTER_AUTH_SECRET) throw new Error("Configure BETTER_AUTH_SECRET before HTTP tests");
@@ -32,7 +33,22 @@ if (["tests/communications-http.test.ts", "tests/load-http.test.ts"].includes(ta
   }
 }
 await rm(env.SMO_TEST_DIST_DIR, { recursive: true, force: true });
-const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: ["ignore", process.env.TEST_SERVER_LOG ? "pipe" : "ignore", "pipe"] });
+// Measure the optimized runtime, not the development compiler/HMR. Build into
+// this runner's private distDir and verify traces before starting local production.
+if (productionLoad) {
+  env.NODE_ENV = "production"; // Synthetic fixtures were prepared before starting the optimized runtime.
+  for (const args of [["node_modules/next/dist/bin/next", "build"], ["scripts/check-build-traces.mjs"]]) {
+    const build = spawn(process.execPath, args, { env, stdio: "ignore" });
+    const code = await new Promise(resolve => { build.on("exit", resolve); build.on("error", () => resolve(1)); });
+    if (code !== 0) {
+      await rm(env.SMO_TEST_DIST_DIR, { recursive: true, force: true });
+      if (control) { await control.query(`DROP DATABASE "${disposable}" WITH (FORCE)`); await control.end(); }
+      if (diplomaDirectory) await rm(diplomaDirectory, { recursive: true, force: true });
+      throw new Error("Isolated load build/trace verification failed");
+    }
+  }
+}
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", productionLoad ? "start" : "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: ["ignore", process.env.TEST_SERVER_LOG ? "pipe" : "ignore", "pipe"] });
 if (process.env.TEST_SERVER_LOG) {
   const log = createWriteStream(process.env.TEST_SERVER_LOG);
   server.stdout?.pipe(log); server.stderr.pipe(log);

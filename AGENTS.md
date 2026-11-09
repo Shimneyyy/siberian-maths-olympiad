@@ -248,3 +248,9 @@ F01b/F03: backup tools — только синтетическая loopback-БД
 и результаты бессрочны. test:ops/test:load запускать последовательно с DB/HTTP.
 Фасеты списка группируются в SQL в прежнем registrationsScope, не возвращать
 findMany/distinct с тысячами строк на каждый polling. Production остаётся закрыт.
+
+F03 load: runner строит приватный .next/test-runtime и проверяет traces до локального
+start; fixtures — только синтетические до production-runtime. Не ослаблять guard
+seed и не увеличивать timeout вместо исправления нагрузки. Индекс миграции 26
+(editionId/fullName/id) поддерживает стандартный polling. Scoped IDs площадок берутся
+только из server-side назначений текущей транзакции, никогда из клиентского массива.

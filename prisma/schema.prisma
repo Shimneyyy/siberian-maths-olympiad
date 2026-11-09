@@ -311,6 +311,7 @@ model Participation {
 
   @@unique([userId, editionId])
   @@index([editionId, editionVenueId, id])
+  @@index([editionId, fullName, id])
 }
 
 enum AttendanceStatus {

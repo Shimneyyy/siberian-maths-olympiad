@@ -26,7 +26,7 @@ checkout/ветка work; новый проект/worktree, merge в main и п�
 Локально прошли: lint/typecheck; DB 113/113; files 19/19; auth HTTP 6/6;
 live Chromium 1/1; communications Chromium/HTTP/SMTP 1/1; ops 3/3; load 1/1.
 Build/check:build прошли: 76 server traces без локальных секретов. Schema diff
-пуст (25 миграций); npm audit high — код 0, 8 moderate. Сохраняются 3 tracing
+пуст (26 миграций); npm audit high — код 0, 8 moderate. Сохраняются 3 tracing
 предупреждения Turbopack и предупреждение pg о client.query, они не подавлялись.
 Реальные CLI audit/requests, backup:create/retention-plan/restore прошли; smoke
 восстановления подтвердил все 25 миграций, свои временные ресурсы удалены.
@@ -66,3 +66,13 @@ production-провайдеры БД/файлов/копий/почты и KMS, 
 
 Полный перечень условий и порядок отката — [OPERATIONS.md](OPERATIONS.md).
 Секреты/настоящие ПДн не запрашиваются в чате; настройки production не публикуются.
+
+## Финальная корректировка нагрузки
+
+Удалённые ed8ecec/f61cc01 получили failure на dev-нагрузке с timeout 4 с; прочие
+предшествующие шаги прошли. Последующее исправление добавило миграцию 26/индекс
+пагинации, устранило повторный relation join в scoped-запросах и перевело test:load
+на изолированный оптимизированный build/start с проверкой traces. Тайм-аут/200 сессий
+не увеличены и не уменьшены. Локально 113 DB, ops 3/3, live 1/1, типы/lint/build,
+schema diff прошли. Нагрузка: p95 2304 мс, max 2594 мс, 600 запросов без ошибок.
+Актуальный удалённый CI фиксируется следующим разделом после завершения.
