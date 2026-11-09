@@ -58,6 +58,7 @@ TLS и проверка checksum сохранены. При восстановл
 npm run lint
 npm run typecheck
 npm run test:db
+npm run test:files
 npm run test:http
 npm run test:communications
 npm run test:live
@@ -79,6 +80,13 @@ HTTP-набор очищает локальные rate-limit fixtures; не за
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:live`.
 Наборы запускаются последовательно; не запускайте другой next dev/build/typegen
 в этом checkout во время браузерных тестов. CI устанавливает Chromium отдельно.
+
+Перед `test:files` и `test:communications` запустите настоящий ClamAV:
+`docker compose --profile files up -d --wait clamav`. Для HTTP-наборов требуется
+учебный keyring (`DEMO_REGISTRATION=true npm run nsuhw:keys -- init`).
+Повторная учебная приёмка после E09/E10, матрица покрытия и открытые условия:
+[F02_ACCEPTANCE.md](docs/F02_ACCEPTANCE.md). Успех этих наборов не закрывает
+эксплуатационную приёмку и не разрешает реальные ПДн.
 
 `GET /api/health`: 200 при доступной БД, 503 при недоступной, без подробностей ошибок.
 `GET /api/me`: только текущий подтверждённый пользователь, без токена сессии;
