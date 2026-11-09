@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  withdrawalRequests ConsentWithdrawalRequest[]
   accountImports NsuhwImportBatch[]
   diplomaBatches DiplomaBatch[]
   resultPublications ResultPublication[]
@@ -686,4 +687,13 @@ model NsuhwImportBatch {
   edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
   actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
   @@index([editionId, createdAt])
+}
+
+model ConsentWithdrawalRequest {
+  id String @id @db.Uuid
+  userId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  reviewedAt DateTime? @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt])
 }

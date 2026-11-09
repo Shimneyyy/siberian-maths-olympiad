@@ -411,6 +411,21 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     const diplomaMailSearch=await(await fetch(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${transferred.email}`)}`)).json() as {messages:{ID:string;Subject:string}[]};
     const diplomaMail=diplomaMailSearch.messages.find(m=>m.Subject.includes("Диплом доступен"));assert.ok(diplomaMail);
     const diplomaMailText=await(await fetch(`http://127.0.0.1:8025/api/v1/message/${diplomaMail.ID}`)).json() as {Text:string};assert.ok(diplomaMailText.Text.includes("Дипломы"));assert.ok(!diplomaMailText.Text.includes(accountBefore.login));
+    // F01: permanent private history and an owner-only manual withdrawal request.
+    await resultPage.goto(`${base}/cabinet/history`);
+    await resultPage.getByRole("cell",{name:"Итоговый учебный приз",exact:true}).waitFor();
+    assert.equal(await resultPage.getByRole("cell",{name:"Предварительные",exact:true}).count(),0);
+    await resultPage.goto(`${base}/cabinet/privacy`);
+    await resultPage.getByLabel("Прошу зарегистрировать обращение",{exact:false}).check();
+    await resultPage.getByRole("button",{name:"Зарегистрировать обращение",exact:true}).click();
+    await resultPage.getByRole("status").filter({hasText:"Обращение зарегистрировано"}).waitFor();
+    const ownRequests=await existingContext.request.get(`${base}/api/privacy/requests`);assert.equal(ownRequests.status(),200);assert.ok(ownRequests.headers()["cache-control"].includes("no-store"));assert.equal((await ownRequests.json()).length,1);
+    assert.equal((await(await recipient.request.get(`${base}/api/privacy/requests`)).json()).length,0);
+    assert.equal((await post(existingContext,"privacy/requests",{id:randomUUID(),confirmed:true,userId:reader.id})).status(),400);
+    assert.equal((await post(existingContext,"privacy/requests",{id:randomUUID(),confirmed:true},"https://untrusted.invalid")).status(),403);
+    assert.equal((await writer.request.get(`${base}/api/privacy/requests`)).status(),403);
+    assert.equal((await(await post(existingContext,"results/search",{editionId:edition.id})).json()).total,1);
+    assert.equal((await post(existingContext,"diplomas/download",{documentId:diplomaDoc.id})).status(),200);
     // E02/E03: an archived local user without generated/legacy identity.
     await db.rateLimit.deleteMany();
     const importedUser = await db.user.create({data:{email:`import-${randomUUID()}@example.test`,name:"Учебный импортированный участник",emailVerified:true}});
