@@ -26,35 +26,39 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     event.preventDefault(); setBusy(true); setMessage("");
     const form = event.currentTarget;
     const data = new FormData(form);
+    // Password managers can fill the DOM without updating React state.
+    // Read the submitted control, just like the password, rather than a stale email.
+    const address = String(data.get("email") ?? email).trim().toLowerCase();
+    if (["login", "register", "verify", "forgot"].includes(mode)) setEmail(address);
     const password = String(data.get("password") || "");
     const value = String(data.get("code") || "");
     try {
       if (mode === "register") {
         const response = await fetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           ...(hasLegacy ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : {firstNameLatin,lastNameLatin}),
-          name: data.get("name"), email, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
+          name: data.get("name"), email: address, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
         }) });
         if (!response.ok) throw new Error("Проверьте поля. Регистрация доступна только в учебном режиме с email @example.test.");
         router.refresh(); router.push("/verify"); return;
       }
       if (mode === "login") {
-        const result = await authClient.signIn.email({ email, password });
+        const result = await authClient.signIn.email({ email: address, password });
         if (result.error?.code === "EMAIL_NOT_VERIFIED") {
-          const sent = await authClient.emailOtp.sendVerificationOtp({ email, type: "email-verification" });
+          const sent = await authClient.emailOtp.sendVerificationOtp({ email: address, type: "email-verification" });
           setMode("verify");
           setMessage(sent.error ? "Не удалось отправить код. Повторите отправку ниже." : "Для входа подтвердите email кодом из письма. Смена пароля сама по себе не подтверждает email.");
           return;
         }
-        if (result.error) throw new Error("Не удалось войти. Проверьте данные и подтверждение email.");
+        if (result.error) throw new Error("Не удалось войти. Проверьте email и пароль личного кабинета, а также подтверждение почты. Логин и пароль nsuhw для входа в ЛК не используются.");
         router.refresh(); router.push(result.data && "twoFactorRedirect" in result.data && result.data.twoFactorRedirect ? "/two-factor" : "/cabinet"); return;
       }
       if (mode === "verify") {
-        const result = await authClient.emailOtp.verifyEmail({ email, otp: value });
+        const result = await authClient.emailOtp.verifyEmail({ email: address, otp: value });
         if (result.error) throw new Error("Код неверен или истёк.");
         router.refresh(); router.push("/login"); return;
       }
       if (mode === "forgot") {
-        const result = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+        const result = await authClient.requestPasswordReset({ email: address, redirectTo: "/reset-password" });
         if (result.error) throw new Error("Не удалось отправить запрос. Повторите позже.");
         setMessage("Если аккаунт существует, на его email придёт инструкция."); return;
       }
@@ -80,7 +84,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
       {mode === "register" && <><label className="block">ФИО<input required name="name" minLength={3} maxLength={200} autoComplete="name" className={field} /></label>
         <label className="block">Университет<select required name="universityId" className={field} defaultValue=""><option value="" disabled>Выберите вуз</option>{universities.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}
-      {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
+      {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input name="email" type="email" required autoComplete="email" autoCapitalize="none" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
       {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : 12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} /><span className="text-xs text-slate-600">Для нового пароля — не менее 12 символов.</span></label>}
       {["verify", "two-factor"].includes(mode) && <label className="block">{mode === "two-factor" && backupCode ? "Резервный код" : `Код ${mode === "verify" ? "из письма" : "из приложения-аутентификатора"}`}<input key={backupCode ? "backup" : "otp"} name="code" type={mode === "two-factor" && backupCode ? "password" : "text"} required inputMode={backupCode ? "text" : "numeric"} autoComplete="one-time-code" pattern={backupCode ? undefined : "[0-9]{6}"} maxLength={backupCode ? 128 : 6} autoCapitalize="none" spellCheck={false} className={field} /></label>}
       {mode === "two-factor" && backupCode && <p className="text-sm">Введите один из кодов, сохранённых при настройке TOTP. Каждый код действует один раз. Пароль аккаунта по-прежнему необходим для входа.</p>}

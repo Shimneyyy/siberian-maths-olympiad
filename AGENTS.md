@@ -254,3 +254,9 @@ start; fixtures — только синтетические до production-runt
 seed и не увеличивать timeout вместо исправления нагрузки. Индекс миграции 26
 (editionId/fullName/id) поддерживает стандартный polling. Scoped IDs площадок берутся
 только из server-side назначений текущей транзакции, никогда из клиентского массива.
+
+AUTH03: auth-форма читает email из FormData (name=email), не только React state:
+браузерное автозаполнение может не вызвать onChange. Не помещать email в URL/storage
+ради переноса между шагами. account-switch browser test всегда в disposable БД;
+общие test:http/test:db не запускать поверх ручных аккаунтов. auth:inspect — только
+локальный synthetic operator, флаги состояния без хешей/паролей/изменения аккаунта.

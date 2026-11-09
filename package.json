@@ -32,7 +32,9 @@
     "test:ops": "tsx --test --test-concurrency=1 tests/managed-backups.test.ts tests/restore-drill.test.ts",
     "backup:create": "tsx scripts/create-demo-backup.ts",
     "test:load": "node scripts/test-http.mjs tests/load-http.test.ts",
-    "backup:restore": "tsx scripts/restore-demo-backup.ts"
+    "backup:restore": "tsx scripts/restore-demo-backup.ts",
+    "test:account-switch": "node scripts/test-http.mjs tests/account-switch-http.test.ts",
+    "auth:inspect": "tsx scripts/inspect-demo-account.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
