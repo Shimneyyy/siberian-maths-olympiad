@@ -58,13 +58,15 @@ export async function applyAccountImport(db: PrismaClient, actorId: string, raw:
       return result(old);
     }
     const ids = [...new Set(parseAccountCsv(input.csv).map(r => r.userId).filter(id => z.uuid().safeParse(id).success))].sort();
-    for (const id of ids) await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    // Never lock a foreign owner merely because their UUID appeared in a rejected CSV row.
+    const scopedOwners = await tx.participation.findMany({ where: { editionId: input.editionId, userId: { in: ids } }, select: { userId: true } });
+    for (const id of scopedOwners.map(p => p.userId).sort()) await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${id}::uuid FOR UPDATE`;
     await lockNsuhwNamespace(tx);
     const preview = await inspect(tx, input.editionId, input.csv);
     if (preview.selectionHash !== input.selectionHash || !preview.validCount) throw new OlympiadError("CONFLICT", "Данные изменились или нет верных строк. Повторите предпросмотр.");
     const keys = await loadDemoKeyProtector(), confirmedAt = new Date();
     for (const row of preview.rows.filter(r => !r.error)) {
-      const account = await storePreparedExternalAccount(tx, row.userId, row.login, row.password, keys);
+      const account = await storePreparedExternalAccount(tx, row.userId, row.login, row.password, keys, actorId);
       await tx.preparedExternalAccount.update({ where: { id: account.id }, data: { confirmedAt, confirmedById: actorId, confirmedEditionId: input.editionId, revision: { increment: 1 } } });
       await enqueueEmail(tx, actorId, { kind: "EXTERNAL_ACCOUNT_READY", sourceId: account.id, sourceRevision: 1, editionId: input.editionId, editionVenueId: null, subjectTemplate: "Данные аккаунта nsuhw доступны", bodyTemplate: "Главный организатор загрузил проверенные данные аккаунта nsuhw. Откройте раздел «Аккаунт nsuhw». Пароль в письме не передаётся." }, [row.participationId!]);
     }

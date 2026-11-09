@@ -12,7 +12,7 @@ import { sealExternalPassword,rewrapExternalPassword,type SecretContext,type Key
 export function externalSecretContext(account:Pick<PreparedExternalAccount,"id"|"userId"|"login"|"credentialVersion">):SecretContext{return {accountId:account.id,userId:account.userId,login:account.login,credentialVersion:account.credentialVersion};}
 // Internal storage primitive, not a permission to export/reveal or create on nsuhw.
 // Future generation calls this in the same transaction after reserving a unique login.
-export async function storePreparedExternalAccount(tx:Prisma.TransactionClient,userId:string,login:string,password:string,protector:KeyProtector){
+export async function storePreparedExternalAccount(tx:Prisma.TransactionClient,userId:string,login:string,password:string,protector:KeyProtector,auditActorId=userId){
  const checkedLogin=legacyNsuhwLogin.parse(login);
  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
  const user=await tx.user.findUniqueOrThrow({where:{id:userId}});
@@ -23,7 +23,7 @@ export async function storePreparedExternalAccount(tx:Prisma.TransactionClient,u
  const data={id:randomUUID(),userId,login:checkedLogin,credentialVersion:1};
  const secretEnvelope=await sealExternalPassword(password,externalSecretContext(data),protector);
  const account=await tx.preparedExternalAccount.create({data:{...data,keyVersion:secretEnvelope.keyVersion,secretEnvelope},select:{id:true,login:true,revision:true}});
- await tx.auditEvent.create({data:{actorId:userId,action:"EXTERNAL_SECRET_PREPARED",objectType:"PreparedExternalAccount",objectId:account.id,outcome:"SUCCESS"}});
+ await tx.auditEvent.create({data:{actorId:auditActorId,action:"EXTERNAL_SECRET_PREPARED",objectType:"PreparedExternalAccount",objectId:account.id,outcome:"SUCCESS"}});
  return account;
 }
 // Local operator task only. Row-by-row rotation is resumable; no plaintext is returned.

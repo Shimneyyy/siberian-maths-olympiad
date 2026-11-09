@@ -23,7 +23,7 @@ checkout/ветка work; новый проект/worktree, merge в main и п�
 
 ## Проверки
 
-Локально прошли: lint/typecheck; DB 112/112; files 19/19; auth HTTP 6/6;
+Локально прошли: lint/typecheck; DB 113/113; files 19/19; auth HTTP 6/6;
 live Chromium 1/1; communications Chromium/HTTP/SMTP 1/1; ops 3/3; load 1/1.
 Build/check:build прошли: 76 server traces без локальных секретов. Schema diff
 пуст (25 миграций); npm audit high — код 0, 8 moderate. Сохраняются 3 tracing
@@ -32,7 +32,10 @@ Build/check:build прошли: 76 server traces без локальных се�
 восстановления подтвердил все 25 миграций, свои временные ресурсы удалены.
 
 Удалённый CI для предыдущих коммитов 0446893/5844abc/152125e уже подтверждён success.
-CI итогового изменения с ops/load проверяется после push и фиксируется отдельно.
+CI изменения ed8ecec с ops/load проверяется после push и фиксируется отдельно.
+После точечного усиления E03 (автор аудита/только scoped User-lock) локально повторены
+DB 113/113, ops 3/3, lint/typecheck/build/check:build. Остальные результаты выше —
+полный запуск до этой правки; финальный CI повторяет всю матрицу.
 Матрица предметного покрытия — [F02_ACCEPTANCE.md](F02_ACCEPTANCE.md), новые
 сценарии/границы — [E02_ACCOUNT_IMPORT.md](E02_ACCOUNT_IMPORT.md),
 [DATA_LIFECYCLE.md](DATA_LIFECYCLE.md) и [OPERATIONS.md](OPERATIONS.md).

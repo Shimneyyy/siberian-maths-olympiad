@@ -53,6 +53,8 @@ test("E02/E03 partial scoped import never returns/stores plaintext and enables o
   const input = await f.command(), result = await applyAccountImport(db, f.chief.id, input);
   assert.equal(result.importedCount, 1); assert.equal((await applyAccountImport(db, f.chief.id, input)).id, result.id);
   assert.equal(await db.outboxJob.count({ where: { editionId: f.edition.id } }), 1);
+  const preparation = await db.auditEvent.findFirstOrThrow({ where: { action: "EXTERNAL_SECRET_PREPARED", objectId: (await db.preparedExternalAccount.findUniqueOrThrow({ where: { userId: f.people[0].user.id } })).id } });
+  assert.equal(preparation.actorId, f.chief.id, "Import audit attributes the write to the authenticated chief");
   const account = await db.preparedExternalAccount.findUniqueOrThrow({ where: { userId: f.people[0].user.id } });
   assert.ok(account.confirmedAt); assert.ok(!JSON.stringify(account.secretEnvelope).includes(f.people[0].secret));
   const revealed = await revealNsuhwSecret(db, f.people[0].user.id, { password, confirmed: true });
@@ -103,4 +105,17 @@ test("E03 audit/outbox failure rolls all records back; concurrent repeats create
   await f.reset();
   const results = await Promise.all([applyAccountImport(db, f.chief.id, command), applyAccountImport(db, f.chief.id, command)]);
   assert.equal(results[0].id, results[1].id); assert.equal(await db.outboxJob.count({ where: { editionId: f.edition.id } }), 1);
+});
+
+test("E03 does not lock a rejected foreign owner's User row", async () => {
+  const f = await fixture();
+  const foreign = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Чужой учебный владелец", emailVerified: true } });
+  f.input.csv = csv([[f.people[0].user.id, f.people[0].login, f.people[0].secret], [foreign.id, "foreign.synthetic", "Synthetic"]]);
+  const command = await f.command();
+  await sql.query("BEGIN");
+  try {
+    await sql.query('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', [foreign.id]);
+    const result = await applyAccountImport(db, f.chief.id, command);
+    assert.equal(result.importedCount, 1); assert.equal(result.rejectedCount, 1);
+  } finally { await sql.query("ROLLBACK"); }
 });
