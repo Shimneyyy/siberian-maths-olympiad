@@ -14,6 +14,7 @@ enum Role {
 }
 
 model User {
+  accountImports NsuhwImportBatch[]
   diplomaBatches DiplomaBatch[]
   resultPublications ResultPublication[]
   resultImports ResultImportBatch[]
@@ -94,6 +95,7 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  accountImports NsuhwImportBatch[]
   diplomaBatches DiplomaBatch[]
   diplomaItems DiplomaItem[]
   diplomaDocuments DiplomaDocument[]
@@ -670,4 +672,18 @@ model DiplomaVersion {
   item DiplomaItem @relation(fields: [itemId, editionId], references: [id, editionId], onDelete: Restrict)
   currentFor DiplomaDocument? @relation("CurrentDiploma")
   @@unique([id, documentId])
+}
+
+model NsuhwImportBatch {
+  id String @id @db.Uuid
+  editionId String @db.Uuid
+  actorId String @db.Uuid
+  sourceMac String @db.Char(64)
+  importedCount Int
+  rejectedCount Int
+  report Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  edition OlympiadEdition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@index([editionId, createdAt])
 }
