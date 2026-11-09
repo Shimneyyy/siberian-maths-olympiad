@@ -37,6 +37,10 @@ export async function olympiadRequest(request: Request, operation: (actorId: str
     }
     if (error instanceof OlympiadError) return Response.json({ error: error.message, code: error.code }, { status: error.code === "NOT_FOUND" ? 404 : 409, headers });
     if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2003", "P2034"].includes(error.code)) return Response.json({ error: "Конфликт данных. Обновите страницу и повторите действие." }, { status: 409, headers });
+    if (process.env.SMO_SYNTHETIC_DIAGNOSTICS === "true" && process.env.DEMO_REGISTRATION === "true" && session.user.email.endsWith("@example.test")) {
+      const code = error instanceof Prisma.PrismaClientKnownRequestError && /^P\d{4}$/.test(error.code) ? error.code : "UNCLASSIFIED";
+      console.error(`SYNTHETIC_API_FAILURE:${code}`); // Never log message, body, IDs, SQL or parameters.
+    }
     return Response.json({ error: "Не удалось выполнить действие. Повторите позже." }, { status: 503, headers });
   }
 }

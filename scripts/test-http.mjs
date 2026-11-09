@@ -36,6 +36,7 @@ await rm(env.SMO_TEST_DIST_DIR, { recursive: true, force: true });
 // Measure the optimized runtime, not the development compiler/HMR. Build into
 // this runner's private distDir and verify traces before starting local production.
 if (productionLoad) {
+  env.SMO_SYNTHETIC_DIAGNOSTICS = "true";
   env.NODE_ENV = "production"; // Synthetic fixtures were prepared before starting the optimized runtime.
   for (const args of [["node_modules/next/dist/bin/next", "build"], ["scripts/check-build-traces.mjs"]]) {
     const build = spawn(process.execPath, args, { env, stdio: "ignore" });
@@ -53,7 +54,10 @@ if (process.env.TEST_SERVER_LOG) {
   const log = createWriteStream(process.env.TEST_SERVER_LOG);
   server.stdout?.pipe(log); server.stderr.pipe(log);
 }
-server.stderr.on("data", () => { /* No server logs containing request URLs in test output. */ });
+server.stderr.on("data", chunk => {
+  // Only a fixed synthetic diagnostic marker may reach test logs; never forward server stderr.
+  if (productionLoad) for (const code of String(chunk).match(/SYNTHETIC_API_FAILURE:(?:P\d{4}|UNCLASSIFIED)/g) || []) console.error(code);
+});
 try {
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt++) {

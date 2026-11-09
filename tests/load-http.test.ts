@@ -33,7 +33,7 @@ test("F03 5000 participants per year, 200 active sessions: scoped HTTP, attendan
     const call = async (i: number) => {
       const started = performance.now();
       const response = await fetch(`${base}${i < 100 ? "/api/registrations/search" : "/api/participations"}`, { method: i < 100 ? "POST" : "GET", headers: { Cookie: cookies[i], Origin: base, ...(i < 100 ? { "Content-Type": "application/json" } : {}) }, ...(i < 100 ? { body: JSON.stringify({ editionId: editions[0].id, pageSize: 25 }) } : {}), signal: AbortSignal.timeout(i < 100 ? 4000 : 30000) });
-      assert.equal(response.status, 200); assert.ok(response.headers.get("cache-control")?.includes("no-store"));
+      assert.equal(response.status, 200, `Synthetic ${i < 100 ? "roster" : "history"} status after ${Math.round(performance.now() - started)} ms`); assert.ok(response.headers.get("cache-control")?.includes("no-store"));
       const value = await response.json();
       if (i < 100) { assert.equal(value.total, 4999); assert.ok(!JSON.stringify(value).includes(people[4999].email)); }
       else { assert.equal(value.participations.length, 2); assert.ok(value.participations.every((p: { fullName: string }) => p.fullName === people[i - 100].name)); }
