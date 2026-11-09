@@ -541,3 +541,70 @@ test("HTTP new signup stores Latin login names independently and enforces both s
   await db.rateLimit.deleteMany();
  }
 });
+
+test("backup-code browser login requires password challenge, rejects foreign/reused codes and preserves MFA", async () => {
+  const { chromium } = await import("playwright");
+  cookies.clear(); await db.rateLimit.deleteMany();
+  const password = `Synthetic-backup-${randomUUID()}`;
+  const users: string[] = [], factors: { totpURI: string; backupCodes: string[] }[] = [];
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  try {
+    for (const role of ["CHIEF_ORGANIZER", "STUDENT"] as const) {
+      cookies.clear();
+      const user = await db.user.create({ data: { email: `backup-${randomUUID()}@example.test`, name: "Учебный резервный вход", role, emailVerified: true } });
+      users.push(user.id);
+      await db.account.create({ data: { userId: user.id, accountId: user.id, providerId: "credential", password: await hashPassword(password) } });
+      assert.equal((await request("/api/auth/sign-in/email", { email: user.email, password })).status, 200);
+      const factor = await (await request("/api/auth/two-factor/enable", { password })).json() as { totpURI: string; backupCodes: string[] };
+      factors.push(factor);
+      assert.equal((await request("/api/auth/two-factor/verify-totp", { code: totp(factor.totpURI), trustDevice: false })).status, 200);
+      assert.equal((await request("/api/auth/sign-out", {})).status, 200);
+    }
+    cookies.clear();
+    assert.notEqual((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status, 200, "Code without a password challenge is rejected");
+    const user = await db.user.findUniqueOrThrow({ where: { id: users[0] } });
+    assert.equal((await request("/api/auth/sign-in/email", { email: user.email, password })).status, 200);
+    assert.equal((await request("/api/me")).status, 401);
+    assert.notEqual((await request("/api/auth/two-factor/verify-backup-code", { code: factors[1].backupCodes[0] })).status, 200, "Another owner's code is rejected");
+    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] }, true, "https://untrusted.invalid")).status, 403);
+    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0], trustDevice: true })).status, 403);
+    assert.equal((await request("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status, 429, "Backup verification is rate limited");
+    // Separate the throttling scenario from the valid-login scenario in this local fixture DB.
+    await db.rateLimit.deleteMany();
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
+    const context = await browser.newContext();
+    await context.addCookies([...cookies].map(([name,value]) => ({ name, value, url: base! })));
+    const page = await context.newPage();
+    await page.goto(`${base}/two-factor`);
+    await page.getByRole("button", { name: "Использовать резервный код", exact: true }).click();
+    await page.getByLabel("Резервный код", { exact: true }).fill(factors[0].backupCodes[0]);
+    const [verified] = await Promise.all([
+      page.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/two-factor/verify-backup-code"),
+      page.getByRole("button", { name: "Продолжить", exact: true }).click(),
+    ]);
+    assert.equal(verified.status(), 200); assert.ok(verified.headers()["cache-control"].includes("no-store"));
+    await page.waitForURL(`${base}/cabinet`);
+    const own = await context.request.get(`${base}/api/me`); assert.equal(own.status(), 200);
+    assert.equal((await own.json()).user.id, user.id);
+    for (const code of factors[0].backupCodes) {
+      assert.ok(!page.url().includes(code), "No backup code in URL");
+      assert.ok(!(await page.content()).includes(code), "No backup code after login");
+    }
+    assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
+    const post = (path: string, data: unknown) => context.request.post(`${base}${path}`, { headers: { Origin: origin }, data });
+    await post("/api/auth/sign-out", {});
+    await post("/api/auth/sign-in/email", { email: user.email, password });
+    assert.notEqual((await post("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[0] })).status(), 200, "Used code cannot be replayed after a new password challenge");
+    assert.equal((await context.request.get(`${base}/api/me`)).status(), 401);
+    assert.equal((await post("/api/auth/two-factor/verify-backup-code", { code: factors[0].backupCodes[1], trustDevice: false })).status(), 200);
+    const preserved = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    assert.equal(preserved.role, "CHIEF_ORGANIZER"); assert.equal(preserved.twoFactorEnabled, true);
+    const factorRow = await db.twoFactor.findFirstOrThrow({ where: { userId: user.id } });
+    assert.ok(!factors[0].backupCodes.some(code => factorRow.backupCodes.includes(code)));
+    assert.equal(await db.editionStaffGrant.count({ where: { userId: user.id } }), 0, "Backup login grants no extra permissions");
+  } finally {
+    await browser?.close(); cookies.clear();
+    await db.user.deleteMany({ where: { id: { in: users } } });
+    await db.rateLimit.deleteMany();
+  }
+});

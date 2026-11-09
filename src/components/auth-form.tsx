@@ -5,6 +5,7 @@ import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { nsuhwLoginPreview } from "@/lib/nsuhw-login-name-rules";
 import { Button } from "@/components/ui/button";
+import { useHydrated } from "@/lib/use-hydrated";
 
 type Choice = { id: string; label: string };
 type Mode = "login" | "register" | "verify" | "forgot" | "reset" | "two-factor";
@@ -14,6 +15,8 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [backupCode, setBackupCode] = useState(false);
+  const hydrated = useHydrated();
   const [hasLegacy, setHasLegacy] = useState(false);
   const [firstNameLatin,setFirstNameLatin] = useState(""), [lastNameLatin,setLastNameLatin] = useState("");
   const preview=nsuhwLoginPreview({firstNameLatin,lastNameLatin});
@@ -21,7 +24,8 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
   const titles = { login: "Вход в личный кабинет", register: "Учебная регистрация", verify: "Подтверждение email", forgot: "Восстановление доступа", reset: "Новый пароль", "two-factor": "Подтверждение входа" };
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const password = String(data.get("password") || "");
     const value = String(data.get("code") || "");
     try {
@@ -59,11 +63,13 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
         if (result.error) throw new Error("Ссылка недействительна или истекла. Запросите новую.");
         setMessage("Пароль изменён. Войдите с новым паролем. Если email ещё не подтверждён, при входе будет отправлен код подтверждения. Для организаторов и администратора также требуется TOTP."); return;
       }
-      const result = await authClient.twoFactor.verifyTotp({ code: value, trustDevice: false });
-      if (result.error) throw new Error("Код неверен или истёк.");
+      const result = backupCode
+        ? await authClient.twoFactor.verifyBackupCode({ code: value, trustDevice: false })
+        : await authClient.twoFactor.verifyTotp({ code: value, trustDevice: false });
+      if (result.error) throw new Error(backupCode ? "Резервный код неверен или уже использован. Введите другой сохранённый код." : "Код неверен или истёк.");
       router.refresh(); router.push("/cabinet");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Повторите попытку позже."); }
-    finally { setBusy(false); }
+    finally { if (mode === "two-factor") form.reset(); setBusy(false); }
   }
   const field = "mt-2 w-full rounded-lg border border-border bg-white px-3 py-3 focus:outline-2 focus:outline-primary";
   return <main className="mx-auto max-w-lg px-6 py-12">
@@ -76,7 +82,8 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}
       {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
       {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : 12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} /><span className="text-xs text-slate-600">Для нового пароля — не менее 12 символов.</span></label>}
-      {["verify", "two-factor"].includes(mode) && <label className="block">Код {mode === "verify" ? "из письма" : "из приложения-аутентификатора"}<input name="code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} className={field} /></label>}
+      {["verify", "two-factor"].includes(mode) && <label className="block">{mode === "two-factor" && backupCode ? "Резервный код" : `Код ${mode === "verify" ? "из письма" : "из приложения-аутентификатора"}`}<input key={backupCode ? "backup" : "otp"} name="code" type={mode === "two-factor" && backupCode ? "password" : "text"} required inputMode={backupCode ? "text" : "numeric"} autoComplete="one-time-code" pattern={backupCode ? undefined : "[0-9]{6}"} maxLength={backupCode ? 128 : 6} autoCapitalize="none" spellCheck={false} className={field} /></label>}
+      {mode === "two-factor" && backupCode && <p className="text-sm">Введите один из кодов, сохранённых при настройке TOTP. Каждый код действует один раз. Пароль аккаунта по-прежнему необходим для входа.</p>}
       {mode === "register" && <fieldset className="space-y-3 rounded border p-3"><legend>Аккаунт nsuhw</legend>
         <label className="flex gap-3"><input type="checkbox" checked={hasLegacy} onChange={e=>setHasLegacy(e.target.checked)} />У меня уже есть аккаунт nsuhw</label>
         {hasLegacy?<><label className="block">Старый логин nsuhw<input name="legacyLogin" required maxLength={254} className={field} autoComplete="off" /></label><label className="flex gap-3 text-sm"><input type="checkbox" name="legacyConfirmed" required />Прошу главного организатора проверить и привязать этот логин. До проверки новые данные nsuhw мне не генерируются.</label><p className="text-sm">Пароль nsuhw не вводите. Новый аккаунт ЛК не подтверждает владение указанным логином.</p></>:<><p>Основное ФИО остаётся в исходном написании. Следующие поля нужны только для нового логина nsuhw: буквы A–Z, без пробелов и знаков. Написание выберите самостоятельно; автоматической транслитерации нет.</p>
@@ -85,9 +92,10 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
         <p role="status">{preview?`Предварительный логин: ${preview}`:"Введите имя и фамилию латиницей, чтобы увидеть предварительный логин"}</p><p className="text-sm">При регистрации ЛК назначит логин, при совпадении добавит индекс 2, 3 и далее. Данные будут подготовлены для ручного переноса в nsuhw — аккаунт на внешнем сайте ещё не создан. Пароль nsuhw станет доступен в ЛК после подтверждения создания главным организатором.</p></>}
       </fieldset>}
       {mode === "register" && <label className="flex gap-3 text-sm leading-6"><input name="demoConsent" type="checkbox" required className="mt-1 size-5 shrink-0" />Использую только вымышленные данные. Это учебная заглушка, а не юридическое согласие на обработку реальных ПДн.</label>}
-      <Button disabled={busy} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
+      <Button disabled={busy || !hydrated} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
       {message && <p role="status" className="rounded-lg border border-border bg-white p-4 text-sm">{message}</p>}
     </form>
+    {mode === "two-factor" && <Button type="button" variant="outline" className="mt-4" disabled={busy || !hydrated} onClick={() => { setBackupCode(!backupCode); setMessage(""); }}>{backupCode ? "Использовать код приложения" : "Использовать резервный код"}</Button>}
     {mode === "verify" && <Button variant="outline" className="mt-4" disabled={busy || !email} onClick={async () => {
       setBusy(true);
       try { await authClient.emailOtp.sendVerificationOtp({ email, type: "email-verification" }); setMessage("Если подтверждение требуется, код отправлен. Проверьте почту."); }
