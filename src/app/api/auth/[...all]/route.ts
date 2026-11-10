@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { prepareNsuhwInTransaction } from "@/lib/prepare-nsuhw";
 import { submitLegacyNsuhwInTransaction } from "@/lib/legacy-nsuhw";
 import { sendMail } from "@/lib/mail";
+import { ExternalKeyConfigurationError } from "@/lib/external-secrets/local-keys";
 import { registrationSchema, DEMO_CONSENT_TEXT, DEMO_CONSENT_VERSION } from "@/lib/registration-rules";
 
 class AuthResponseError extends Error {
@@ -51,10 +52,12 @@ async function handle(request: Request) {
       return result;
     }, { timeout: 15000 });
     // Never send a verification code for an account rolled back with its profile.
-    for (const mail of outgoing) await sendMail(mail);
+    try { for (const mail of outgoing) await sendMail(mail); }
+    catch { return Response.json({ code: "VERIFICATION_DELIVERY_FAILED", error: "Регистрация сохранена, но письмо не отправлено. Запросите код повторно." }, { status: 503 }); }
     return response;
   } catch (error) {
     if (error instanceof AuthResponseError) return error.response;
+    if (error instanceof ExternalKeyConfigurationError) return Response.json({ code: error.code === "WINDOWS_REQUIRES_WSL" ? "REGISTRATION_PLATFORM_UNSUPPORTED" : "NSUHW_PREPARATION_UNAVAILABLE", error: "Подготовка данных nsuhw временно недоступна. Регистрация не завершена." }, { status: 503 });
     return Response.json({ error: "Не удалось завершить регистрацию. Если аккаунт создан, запросите код повторно." }, { status: 503 });
   }
 }

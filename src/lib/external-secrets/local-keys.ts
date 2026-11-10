@@ -3,11 +3,11 @@ import { dirname,resolve } from "node:path";
 import { randomBytes,randomUUID } from "node:crypto";
 import { z } from "zod";
 import { encryptBox,decryptBox,ExternalSecretError,keyVersionSchema,type KeyProtector } from "./envelope";
-export class ExternalKeyConfigurationError extends Error{constructor(){super("Configure the demo external-account keyring; production KMS is not configured");}}
+export class ExternalKeyConfigurationError extends Error{constructor(readonly code: "KEYRING_UNAVAILABLE" | "WINDOWS_REQUIRES_WSL" = "KEYRING_UNAVAILABLE"){super("Configure the demo external-account keyring; production KMS is not configured");}}
 const keySchema=z.string().refine(s=>Buffer.from(s,"base64").length===32&&Buffer.from(s,"base64").toString("base64")===s);
 const ringSchema=z.object({activeVersion:keyVersionSchema,keys:z.record(keyVersionSchema,keySchema)}).strict().refine(r=>Object.hasOwn(r.keys,r.activeVersion));
 type Ring=z.infer<typeof ringSchema>;
-function demo(){if(process.env.NODE_ENV==="production"||process.env.DEMO_REGISTRATION!=="true")throw new ExternalKeyConfigurationError();}
+function demo(){if(process.platform==="win32")throw new ExternalKeyConfigurationError("WINDOWS_REQUIRES_WSL");if(process.env.NODE_ENV==="production"||process.env.DEMO_REGISTRATION!=="true")throw new ExternalKeyConfigurationError();}
 export class DemoLocalKeyProtector implements KeyProtector{
  #keys:Map<string,Buffer>;readonly activeVersion:string;
  constructor(raw:unknown){demo();const ring=ringSchema.safeParse(raw);if(!ring.success)throw new ExternalKeyConfigurationError();this.activeVersion=ring.data.activeVersion;this.#keys=new Map(Object.entries(ring.data.keys).map(([v,k])=>[v,Buffer.from(k,"base64")]));}

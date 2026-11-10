@@ -1485,3 +1485,13 @@ account-switch/live/communications/load по 1/1, build/check:build (75 traces),
 Добавлены 3 DB-регрессии и контроль browser console в test:live; test:pg
 (--throw-deprecation) включён в CI. Результаты и границы — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).
 Новых зависимостей/миграций, фильтрации warning и изменения бизнес-прав нет.
+
+## AUDIT03 — регистрация, 503, native Windows
+
+Текущий пользователь получил 503/exists=false и отказ keys init в PowerShell/CMD;
+выбран WSL/Ubuntu. Инструкция [WINDOWS_WSL.md](WINDOWS_WSL.md) сохраняет .env/.local,
+ключи/секрет и прежнюю БД, без reset. Добавлены fail-closed platform guard, точные
+безопасные сообщения UI/API, разделение keyring rollback и mail failure after commit,
+DOM-autofill латинских полей и реальный test:registration в disposable DB/Chromium.
+Локальный перенос пользователя ещё не подтверждён; настоящая Windows-приёмка не
+выполнялась. Итоговые результаты и границы — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).

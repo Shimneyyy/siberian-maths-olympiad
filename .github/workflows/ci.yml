@@ -56,6 +56,7 @@ jobs:
           PG_CONTAINER: ${{ job.services.postgres.id }}
       - run: npx playwright install --with-deps chromium
       - run: npm run test:http
+      - run: npm run test:registration
       - run: npm run test:account-switch
       - run: npm run test:live
       - run: npm run test:communications

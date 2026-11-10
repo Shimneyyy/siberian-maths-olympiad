@@ -1216,3 +1216,12 @@ account-switch/live/communications/load по 1/1, build/check:build (75 traces),
 seed и тесты переведены на неё. Новые проверки: конкурентный SQL без предупреждения,
 rollback, независимые транзакции, browser console на двух списках. Команда test:pg
 с --throw-deprecation включена в CI. Итоговые результаты — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).
+
+## AUDIT03 — /register: корректные сообщения 503 и запуск Windows через WSL
+
+По данным пользователя: 503, аккаунт отсутствует, keys init отказывает, сервер
+запущен в Windows PowerShell/CMD. Найдена несовместимость POSIX keyring permissions;
+пользователь выбрал WSL. Добавлены явный отказ до изменения ключей, инструкция
+[переноса в WSL](WINDOWS_WSL.md), безопасные сообщения API/UI о сбоях подготовки и
+SMTP, исправление Latin DOM-autofill. Новые реальные failure/rollback/SMTP browser
+тесты включены в CI. Причины, границы и результаты — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).

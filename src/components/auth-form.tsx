@@ -6,6 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import { nsuhwLoginPreview } from "@/lib/nsuhw-login-name-rules";
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
+import { registrationFailureMessage } from "@/lib/registration-feedback";
 
 type Choice = { id: string; label: string };
 type Mode = "login" | "register" | "verify" | "forgot" | "reset";
@@ -35,10 +36,10 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     try {
       if (mode === "register") {
         const response = await fetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          ...(hasLegacy ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : {firstNameLatin,lastNameLatin}),
+          ...(hasLegacy ? { legacyNsuhwLogin: data.get("legacyLogin"), legacyNsuhwClaimConfirmed: data.get("legacyConfirmed") === "on" } : { firstNameLatin: data.get("firstNameLatin"), lastNameLatin: data.get("lastNameLatin") }),
           name: data.get("name"), email: address, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
         }) });
-        if (!response.ok) throw new Error("Проверьте поля. Регистрация доступна только в учебном режиме с email @example.test.");
+        if (!response.ok) throw new Error(registrationFailureMessage(response.status, await response.json().catch(() => null)));
         router.refresh(); router.push("/verify"); return;
       }
       if (mode === "login") {

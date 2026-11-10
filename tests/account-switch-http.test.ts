@@ -37,8 +37,10 @@ test("same browser switches admin to newly registered/verified student, includin
     await page.locator('input[name="password"]').fill(studentPassword);
     await page.getByLabel("Имя латиницей для логина", { exact: true }).fill("Synthetic");
     await page.getByLabel("Фамилия латиницей для логина", { exact: true }).fill("Student");
+    await page.getByLabel("Имя латиницей для логина", { exact: true }).evaluate(element => { (element as HTMLInputElement).value = "Autofilled"; });
     await page.getByRole("checkbox", { name: "Использую только вымышленные данные", exact: false }).check();
     const [registered] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/sign-up/email"), page.getByRole("button", { name: "Продолжить", exact: true }).click()]);
+    assert.equal(registered.request().postDataJSON().firstNameLatin, "Autofilled", "Latin names must also match browser-autofilled DOM fields");
     assert.equal(registered.status(), 200); await page.waitForURL(`${base}/verify`);
     const user = await db.user.findUniqueOrThrow({ where: { email: studentEmail } }); assert.equal(user.role, "STUDENT");
     const search = await (await fetch(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${studentEmail}`)}`)).json() as { messages: { ID: string }[] };

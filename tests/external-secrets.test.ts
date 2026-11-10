@@ -143,3 +143,17 @@ test("E04 missing name/key failure rolls back and preparation never changes emai
  const after=await db.user.findUniqueOrThrow({where:{id:owner.id}});assert.equal(after.emailVerified,false);assert.equal(after.role,"STUDENT");
  await assert.rejects(preparedNsuhwView(db,owner.id));
 });
+
+test("unsupported Windows key backend refuses before creating or modifying key files", async () => {
+ const directory=await mkdtemp(join(tmpdir(),"smo-windows-guard-")),path=join(directory,"keyring.json");
+ const script=`import assert from 'node:assert/strict';
+ const {initializeDemoKeyring}=await import('./src/lib/external-secrets/local-keys.ts');
+ Object.defineProperty(process,'platform',{value:'win32'});
+ await assert.rejects(initializeDemoKeyring(),error=>error.code==='WINDOWS_REQUIRES_WSL');`;
+ const run=()=>promisify(execFile)(process.execPath,["--import","tsx","--input-type=module","-e",script],{env:{...process.env,NODE_ENV:"development",DEMO_REGISTRATION:"true",NSUHW_KEYRING_FILE:path}});
+ try{
+  await run();await assert.rejects(stat(path),error=>(error as NodeJS.ErrnoException).code==="ENOENT");
+  const {writeFile}=await import("node:fs/promises");await writeFile(path,"synthetic-key-marker",{mode:0o600});
+  await run();assert.equal(await readFile(path,"utf8"),"synthetic-key-marker");
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

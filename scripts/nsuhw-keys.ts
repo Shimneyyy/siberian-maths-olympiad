@@ -15,4 +15,6 @@ async function main(){
  const db=new PrismaClient({adapter:new PrismaPg({connectionString:process.env.DATABASE_URL})});
  try{const result=await rewrapPreparedExternalAccounts(db,provider);console.log(`Rewrapped records: ${result.count}. No passwords changed or displayed.`);}finally{await db.$disconnect();}
 }
-main().catch(()=>{console.error("External key operation failed. Check demo mode, keyring permissions/versions and database. No secrets displayed.");process.exitCode=1;});
+main().catch(()=>{console.error(process.platform === "win32"
+ ? "Windows: запустите проект и эту команду в WSL/Ubuntu из файловой системы Linux (не /mnt/c). Текущий backend ключей требует Unix-права; Windows ACL не реализованы. Существующие ключи не удаляйте. Инструкция: docs/WINDOWS_WSL.md."
+ : "External key operation failed. Check demo mode, keyring permissions/versions and database. No secrets displayed.");process.exitCode=1;});

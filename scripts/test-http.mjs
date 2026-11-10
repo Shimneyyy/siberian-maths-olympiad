@@ -6,16 +6,22 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { setTimeout } from "node:timers/promises";
 const target = process.argv[2] || "tests/auth-http.test.ts";
-if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
+if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
 const productionLoad = target === "tests/load-http.test.ts";
 const port = 3100;
 const base = `http://localhost:${port}`;
 if (!process.env.BETTER_AUTH_SECRET) throw new Error("Configure BETTER_AUTH_SECRET before HTTP tests");
 const env = { ...process.env, NODE_ENV: "development", DEMO_REGISTRATION: "true", BETTER_AUTH_URL: base, TEST_BASE_URL: base, NEXT_TELEMETRY_DISABLED: "1", SMO_TEST_DIST_DIR: ".next/test-runtime" };
+// Failure scenarios use real configuration errors in disposable synthetic DBs.
+if (target === "tests/registration-http.test.ts") {
+  if (process.env.TEST_REGISTRATION_FAILURE === "keyring") env.NSUHW_KEYRING_FILE = `.local/missing-test-keyring-${randomUUID()}.json`;
+  else if (process.env.TEST_REGISTRATION_FAILURE === "mail") { env.SMTP_HOST = "127.0.0.1"; env.SMTP_PORT = "1"; }
+  else throw new Error("Unknown registration failure scenario");
+}
 // Communications exercise immutable publications. Use a disposable local database,
 // then drop that database rather than bypassing publication protection to clean up.
 let control, disposable, diplomaDirectory;
-if (["tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts"].includes(target)) {
+if (["tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts"].includes(target)) {
   const url = new URL(env.DATABASE_URL);
   if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local synthetic database required");
   disposable = `smo_test_${randomUUID().replaceAll("-", "")}`;
