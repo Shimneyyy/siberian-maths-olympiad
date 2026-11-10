@@ -175,3 +175,34 @@ test("cabinet navigation separates every section for all roles on mobile and des
     }
   } finally { await browser.close(); await db.$disconnect(); }
 });
+
+test("technical admin sees empty-state guidance, then can assign a chief after edition provisioning", { timeout: 90000 }, async () => {
+  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+  const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
+  try {
+    await db.rateLimit.deleteMany();
+    assert.equal(await db.olympiadEdition.count(), 0, "Disposable fixture begins without editions");
+    const admin = await db.user.findFirstOrThrow({ where: { role: "TECHNICAL_ADMIN" } });
+    const password = `Synthetic-empty-admin-${randomUUID()}`;
+    await db.account.updateMany({ where: { userId: admin.id, providerId: "credential" }, data: { password: await hashPassword(password) } });
+    const context = await browser.newContext(), page = await context.newPage();
+    assert.equal((await context.request.post(`${base}/api/auth/sign-in/email`, { headers: { Origin: base }, data: { email: admin.email, password } })).status(), 200);
+    await page.goto(`${base}/cabinet/admin`);
+    await page.getByRole("heading", { name: "Пока нет выпусков олимпиады", exact: true }).waitFor({ timeout: 10000 });
+    assert.equal(await page.locator("form").count(), 0);
+    await promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/create-edition.ts", "2026", "Учебная СМО для проверки пустого кабинета"]);
+    await page.getByRole("button", { name: "Обновить список выпусков", exact: true }).click();
+    await page.getByRole("heading", { name: "2026 · Учебная СМО для проверки пустого кабинета", exact: true }).waitFor();
+    assert.equal(await page.getByRole("heading", { name: "Пока нет выпусков олимпиады", exact: true }).count(), 0);
+    const form = page.locator("form").filter({ has: page.getByLabel("Email главного", { exact: true }) });
+    const email = `empty-chief-${randomUUID()}@example.test`;
+    await form.getByLabel("Синтетическое имя", { exact: true }).fill("Учебный главный нового выпуска");
+    await form.getByLabel("Email главного", { exact: true }).fill(email);
+    await form.getByLabel("Текущий пароль", { exact: true }).fill(password);
+    const [assigned] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === "/api/admin/chief"), form.getByRole("button", { name: "Выполнить операцию", exact: true }).click()]);
+    assert.equal(assigned.status(), 200);
+    const chief = await db.user.findUniqueOrThrow({ where: { email } });
+    assert.equal(chief.role, "CHIEF_ORGANIZER");
+    assert.equal(await db.editionStaffGrant.count({ where: { userId: chief.id, revokedAt: null } }), 1);
+  } finally { await browser.close(); await db.$disconnect(); }
+});

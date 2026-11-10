@@ -1495,3 +1495,10 @@ account-switch/live/communications/load по 1/1, build/check:build (75 traces),
 DOM-autofill латинских полей и реальный test:registration в disposable DB/Chromium.
 Локальный перенос пользователя ещё не подтверждён; настоящая Windows-приёмка не
 выполнялась. Итоговые результаты и границы — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).
+
+## AUDIT04 — первый выпуск и пустой admin UI
+
+Пользователь подтвердил, что на /cabinet/admin нет форм. Причина в коде: editions.map
+без empty state при пустой БД. Добавлены объяснение/обновление и инструкция первого
+выпуска в WINDOWS_WSL. Chromium проверяет CLI provisioning и настоящее назначение
+главного после обновления. Бизнес-сервисы, роли и схема неизменны; итоги — BUGFIX_PLAN.
