@@ -121,6 +121,7 @@ test("HTTP chief manages venue staff only with verified email and password reaut
   const password = `Chief-synthetic-${tag}`;
   const chief = await db.user.create({ data: { name: "Тестовый главный организатор", email: `chief-http-${tag}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true } });
   const targetEmail = `staff-http-${tag}@example.test`;
+  const outsider = await db.user.create({ data: { name: "Чужой учебный студент", email: `unrelated-${tag}@example.test`, emailVerified: true } });
   const edition = await db.olympiadEdition.create({ data: { year: 6200, title: "HTTP тест назначений" } });
   const venue = await db.venue.create({ data: { name: "HTTP тест площадки" } });
   const site = await db.editionVenue.create({ data: { venueId: venue.id, editionId: edition.id, address: "Синтетический адрес" } });
@@ -129,6 +130,13 @@ test("HTTP chief manages venue staff only with verified email and password reaut
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     assert.equal((await request("/api/auth/sign-in/email", { email: chief.email, password })).status, 200);
     const payload = { email: targetEmail, name: "Синтетический организатор площадки", editionId: edition.id, editionVenueId: site.id, password };
+    const invalidUtf8 = await fetch(`${base}/api/admin/schedule`, {
+      method: "POST", headers: { Origin: origin, "Content-Type": "application/json", Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") },
+      body: Uint8Array.of(0x22, 0xc3, 0x28, 0x22),
+    });
+    assert.equal(invalidUtf8.status, 400, "Malformed UTF-8 is a client error, not 503");
+    assert.match(invalidUtf8.headers.get("cache-control") ?? "", /no-store/);
+    assert.deepEqual(await invalidUtf8.json(), { error: "Проверьте поля формы" });
     assert.equal((await request("/api/staff", { ...payload, password: "Wrong-password" })).status, 403);
     assert.equal(await db.user.findUnique({ where: { email: targetEmail } }), null);
     assert.equal((await request("/api/staff", payload)).status, 200);
@@ -136,6 +144,14 @@ test("HTTP chief manages venue staff only with verified email and password reaut
     assert.equal(target.role, "VENUE_ORGANIZER");
     assert.equal(target.emailVerified, false, "Mailbox proof is still required for a newly assigned organizer");
     await mail(targetEmail, "Восстановление");
+    const outsiderSession = await db.session.create({ data: { userId: outsider.id, token: randomUUID(), expiresAt: new Date(Date.now() + 60000) } });
+    const denied = await fetch(`${base}/api/staff`, {
+      method: "DELETE", headers: { Origin: origin, "Content-Type": "application/json", Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") },
+      body: JSON.stringify({ editionId: edition.id, editionVenueId: site.id, userId: outsider.id, password }),
+    });
+    assert.equal(denied.status, 403);
+    assert.match(denied.headers.get("cache-control") ?? "", /no-store/);
+    assert.ok(await db.session.findUnique({ where: { id: outsiderSession.id } }), "Scoped chief cannot terminate an unrelated user's session");
     const revocation = await fetch(`${base}/api/staff`, {
       method: "DELETE", headers: { Origin: origin, "Content-Type": "application/json", Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") },
       body: JSON.stringify({ editionId: edition.id, editionVenueId: site.id, userId: target.id, password }),
@@ -144,7 +160,7 @@ test("HTTP chief manages venue staff only with verified email and password reaut
     assert.ok((await db.venueStaffAssignment.findUniqueOrThrow({ where: { userId_editionVenueId: { userId: target.id, editionVenueId: site.id } } })).revokedAt);
   } finally {
     const target = await db.user.findUnique({ where: { email: targetEmail } });
-    const ids = [chief.id, ...(target ? [target.id] : [])];
+    const ids = [chief.id, outsider.id, ...(target ? [target.id] : [])];
     await db.venueStaffAssignment.deleteMany({ where: { userId: { in: ids } } });
     await db.editionStaffGrant.deleteMany({ where: { userId: chief.id } });
     await db.auditEvent.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { editionId: edition.id }] } });

@@ -11,5 +11,41 @@ export default async function Cabinet() {
     include: { venue: true, edition: true, assignments: { where: { revokedAt: null }, include: { user: { select: { id: true, name: true } } } } },
   }) : [];
   const roles = { TECHNICAL_ADMIN: "Технический администратор", STUDENT: "Студент", CHIEF_ORGANIZER: "Главный организатор", VENUE_ORGANIZER: "Организатор площадки" };
-  return <main className="mx-auto max-w-3xl px-6 py-12"><h1 className="text-3xl font-semibold">Личный кабинет</h1><p className="mt-4">{user.name}</p><p className="mt-2 text-slate-600">{roles[user.role as keyof typeof roles]}</p><p className="mt-6">Учебная версия. Используйте только вымышленные данные. Регистрация, история, команды и списки доступны по вашей роли.</p>{user.role === "STUDENT" && <Link href="/cabinet/profile" className="mt-4 block text-primary">Редактировать профиль</Link>}{user.role === "STUDENT" && <Link href="/cabinet/teams" className="mt-4 block text-primary">Команды олимпиады</Link>}<nav aria-label="Разделы кабинета" className="mt-6 flex flex-wrap gap-4 text-primary">{["CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") && <Link href="/cabinet/registrations">Участники олимпиады</Link>}{user.role === "STUDENT" && <Link href="/cabinet/olympiad">Моё участие в олимпиаде</Link>}{user.role === "CHIEF_ORGANIZER" && <Link href="/cabinet/organization">Годы и площадки</Link>}</nav>{user.role === "TECHNICAL_ADMIN" && <Link href="/cabinet/admin">Техническое администрирование</Link>}{["STUDENT", "CHIEF_ORGANIZER"].includes(user.role ?? "") && <Link href="/cabinet/announcements">Объявления</Link>}{user.role === "CHIEF_ORGANIZER" && <Link href="/cabinet/mail">Рассылки</Link>}{["STUDENT","CHIEF_ORGANIZER"].includes(user.role??"") && <Link href="/cabinet/nsuhw">Аккаунт nsuhw</Link>}{user.role === "CHIEF_ORGANIZER" && <Link href="/cabinet/nsuhw-export">Передача аккаунтов в nsuhw</Link>}{user.role === "CHIEF_ORGANIZER" && <Link href="/cabinet/results-import">Загрузка личных результатов</Link>}{["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") && <Link href="/cabinet/results">Результаты</Link>}{["STUDENT","CHIEF_ORGANIZER"].includes(user.role??"") && <Link href="/cabinet/diplomas">Дипломы</Link>}{user.role === "CHIEF_ORGANIZER" && <Link href="/cabinet/nsuhw-import">Импорт готовых аккаунтов nsuhw</Link>}<AccountControls />{user.role === "CHIEF_ORGANIZER" && <StaffManager venues={venues.map((v) => ({ id: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` }))} staff={venues.flatMap((v) => v.assignments.map((a) => ({ userId: a.userId, name: a.user.name, venueId: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` })))} />}</main>;
+  const sections = [
+    ...(user.role === "STUDENT" ? [
+      ["/cabinet/profile", "Редактировать профиль"],
+      ["/cabinet/teams", "Команды олимпиады"],
+      ["/cabinet/olympiad", "Моё участие в олимпиаде"],
+    ] : []),
+    ...(["CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") ? [
+      ["/cabinet/registrations", "Участники олимпиады"],
+    ] : []),
+    ...(user.role === "TECHNICAL_ADMIN" ? [["/cabinet/admin", "Техническое администрирование"]] : []),
+    ...(["STUDENT", "CHIEF_ORGANIZER"].includes(user.role ?? "") ? [
+      ["/cabinet/announcements", "Объявления"],
+      ["/cabinet/nsuhw", "Аккаунт nsuhw"],
+      ["/cabinet/diplomas", "Дипломы"],
+    ] : []),
+    ...(user.role === "CHIEF_ORGANIZER" ? [
+      ["/cabinet/organization", "Годы и площадки"],
+      ["/cabinet/mail", "Рассылки"],
+      ["/cabinet/nsuhw-export", "Передача аккаунтов в nsuhw"],
+      ["/cabinet/results-import", "Загрузка личных результатов"],
+      ["/cabinet/nsuhw-import", "Импорт готовых аккаунтов nsuhw"],
+    ] : []),
+    ...(["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") ? [
+      ["/cabinet/results", "Результаты"],
+    ] : []),
+  ];
+  return <main className="mx-auto max-w-3xl px-6 py-12">
+    <h1 className="text-3xl font-semibold">Личный кабинет</h1>
+    <p className="mt-4 break-words">{user.name}</p>
+    <p className="mt-2 text-slate-600">{roles[user.role as keyof typeof roles]}</p>
+    <p className="mt-6">Учебная версия. Используйте только вымышленные данные. Регистрация, история, команды и списки доступны по вашей роли.</p>
+    <nav aria-label="Разделы кабинета" className="mt-6 grid gap-3 text-primary sm:grid-cols-2">
+      {sections.map(([href, title]) => <Link key={href} href={href} className="rounded-lg border border-border bg-white p-3 break-words hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary">{title}</Link>)}
+    </nav>
+    <AccountControls />
+    {user.role === "CHIEF_ORGANIZER" && <StaffManager venues={venues.map((v) => ({ id: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` }))} staff={venues.flatMap((v) => v.assignments.map((a) => ({ userId: a.userId, name: a.user.name, venueId: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` })))} />}
+  </main>;
 }

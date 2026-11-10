@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
@@ -12,6 +12,7 @@ type Mode = "login" | "register" | "verify" | "forgot" | "reset";
 export function AuthForm({ mode: initialMode, universities = [], courses = [], resetToken = "" }:
  { mode: Mode; universities?: Choice[]; courses?: Choice[]; resetToken?: string }) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -54,7 +55,11 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
       if (mode === "verify") {
         const result = await authClient.emailOtp.verifyEmail({ email: address, otp: value });
         if (result.error) throw new Error("Код неверен или истёк.");
-        router.refresh(); router.push("/login"); return;
+        // Verification may be displayed inside /login itself. A same-route
+        // navigation/refresh preserves useState, so reset the UI explicitly.
+        form.reset(); setMode("login");
+        setMessage("Email подтверждён. Войдите с паролем личного кабинета.");
+        router.replace("/login"); router.refresh(); return;
       }
       if (mode === "forgot") {
         const result = await authClient.requestPasswordReset({ email: address, redirectTo: "/reset-password" });
@@ -74,7 +79,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     <Link href="/" className="text-sm text-primary">← Сибирская математическая олимпиада</Link>
     <h1 className="mt-8 text-3xl font-semibold">{titles[mode]}</h1>
     <p className="mt-4 text-sm leading-6 text-slate-600">Учебная версия: используйте только вымышленные данные. Реальные персональные данные пока не принимаются.</p>
-    <form method="post" onSubmit={submit} className="mt-6 space-y-5">
+    <form ref={formRef} method="post" onSubmit={submit} className="mt-6 space-y-5">
       {mode === "register" && <><label className="block">ФИО<input required name="name" minLength={3} maxLength={200} autoComplete="name" className={field} /></label>
         <label className="block">Университет<select required name="universityId" className={field} defaultValue=""><option value="" disabled>Выберите вуз</option>{universities.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}
@@ -92,9 +97,17 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
       <Button disabled={busy || !hydrated} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
       {message && <p role="status" className="rounded-lg border border-border bg-white p-4 text-sm">{message}</p>}
     </form>
-    {mode === "verify" && <Button variant="outline" className="mt-4" disabled={busy || !email} onClick={async () => {
-      setBusy(true);
-      try { await authClient.emailOtp.sendVerificationOtp({ email, type: "email-verification" }); setMessage("Если подтверждение требуется, код отправлен. Проверьте почту."); }
+    {mode === "verify" && <Button variant="outline" className="mt-4" disabled={busy || !hydrated} onClick={async () => {
+      const form = formRef.current;
+      const emailField = form?.elements.namedItem("email") as HTMLInputElement | null;
+      if (!form || !emailField?.reportValidity()) return;
+      const address = String(new FormData(form).get("email") ?? "").trim().toLowerCase();
+      setEmail(address); setBusy(true); setMessage("");
+      try {
+        const result = await authClient.emailOtp.sendVerificationOtp({ email: address, type: "email-verification" });
+        if (result.error) throw new Error("OTP delivery failed");
+        setMessage("Если подтверждение требуется, код отправлен. Проверьте почту.");
+      }
       catch { setMessage("Не удалось отправить. Повторите позже."); } finally { setBusy(false); }
     }}>Отправить код повторно</Button>}
     <nav aria-label="Доступ к аккаунту" className="mt-8 flex flex-wrap gap-4 text-sm text-primary">

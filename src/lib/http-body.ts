@@ -16,6 +16,8 @@ export async function readJsonBody(request: Request, limit = 16384): Promise<{ v
   const buffer = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
-  const raw = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  let raw: string;
+  try { raw = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+  catch { throw new SyntaxError("Invalid UTF-8 body"); }
   return { value: JSON.parse(raw), raw };
 }
