@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 // Operator-only local CLI, never exposed by an application endpoint.
 async function main() {
   const input = z.object({ email: z.email(), name: z.string().trim().min(3).max(200) }).parse({ email: process.argv[2]?.toLowerCase(), name: process.argv[3] });

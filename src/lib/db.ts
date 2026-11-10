@@ -1,4 +1,4 @@
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "./pg-adapter";
 import "server-only";
 import { PrismaClient } from "@prisma/client";
 const poolMax = Number(process.env.DATABASE_POOL_MAX || 20);

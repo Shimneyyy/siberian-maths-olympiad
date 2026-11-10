@@ -2,7 +2,7 @@ import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
 import { AdminRateLimit, saveRegistrationWindow } from "../src/lib/admin";
 import { PrismaClient, type Prisma } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { randomUUID, createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";

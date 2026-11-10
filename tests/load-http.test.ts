@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { serializeSignedCookie } from "better-call";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 const base = process.env.TEST_BASE_URL!;
 if (!["localhost", "127.0.0.1"].includes(new URL(base).hostname) || !/^\/smo_test_[a-f0-9]+$/.test(new URL(process.env.DATABASE_URL!).pathname)) throw new Error("Disposable local load database required");
 test("F03 5000 participants per year, 200 active sessions: scoped HTTP, attendance visibility and revocation", { timeout: 180000 }, async () => {

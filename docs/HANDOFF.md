@@ -1475,3 +1475,13 @@ account-switch/live/communications/load по 1/1, build/check:build (75 traces),
 Секреты и журналы остаются в игнорируемых .env/.local/work. Миграций/зависимостей
 нет; main и публикация среды не затрагиваются. Не считать первый пакет закрытием
 всего backlog или production-приёмкой.
+
+## AUDIT02 — устранение pg DeprecationWarning на странице участников
+
+После 7d2a591 пользователь отдельно сообщил client.query warning. Он воспроизведён
+с trace-deprecation в Prisma relation loader. Добавлен src/lib/pg-adapter.ts:
+очередь SQL одного транзакционного соединения и ожидание перед его освобождением.
+Все точки создания PrismaPg в app/CLI/seed/tests используют общую фабрику.
+Добавлены 3 DB-регрессии и контроль browser console в test:live; test:pg
+(--throw-deprecation) включён в CI. Результаты и границы — [BUGFIX_PLAN.md](BUGFIX_PLAN.md).
+Новых зависимостей/миграций, фильтрации warning и изменения бизнес-прав нет.

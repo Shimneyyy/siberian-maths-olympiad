@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { hashPassword } from "better-auth/crypto";
 import { previewAccountImport, applyAccountImport } from "../src/lib/account-imports";
 import { parseAccountCsv } from "../src/lib/account-import-csv";

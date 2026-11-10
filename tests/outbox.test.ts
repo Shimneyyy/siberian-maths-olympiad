@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { randomUUID } from "node:crypto";
 import { before, beforeEach, after, test } from "node:test";
 import assert from "node:assert/strict";

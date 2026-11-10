@@ -5,7 +5,7 @@ import { randomBytes,randomUUID } from "node:crypto";
 import { readFile,readdir } from "node:fs/promises";
 import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { hashPassword } from "better-auth/crypto";
 import { DemoLocalKeyProtector } from "../src/lib/external-secrets/local-keys";
 import { openExternalPassword } from "../src/lib/external-secrets/envelope";

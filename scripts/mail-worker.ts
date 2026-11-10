@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { setTimeout } from "node:timers/promises";
 import { processEmail } from "../src/lib/outbox";
 import { sendMail } from "../src/lib/mail-transport";

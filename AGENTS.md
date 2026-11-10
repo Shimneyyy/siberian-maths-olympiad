@@ -262,3 +262,12 @@ AUTH03: auth-форма читает email из FormData (name=email), не то
 ради переноса между шагами. account-switch browser test всегда в disposable БД;
 общие test:http/test:db не запускать поверх ручных аккаунтов. auth:inspect — только
 локальный synthetic operator, флаги состояния без хешей/паролей/изменения аккаунта.
+
+## PostgreSQL: очередь запросов транзакции (AUDIT02)
+
+App/CLI/seed/tests должны импортировать PrismaPg из `src/lib/pg-adapter.ts`.
+Эта фабрика сериализует SQL одного транзакционного соединения: relation loader
+Prisma может подавать запросы параллельно даже при await прикладного ORM-вызова.
+Разные соединения остаются параллельными. Не скрывать deprecation warnings и не
+патчить node_modules. При изменении адаптера проверять pg-adapter/registrations
+с --throw-deprecation, rollback, live и нагрузку без увеличения прежних тайм-аутов.

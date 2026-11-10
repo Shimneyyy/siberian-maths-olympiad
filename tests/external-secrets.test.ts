@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { sealExternalPassword,openExternalPassword,rewrapExternalPassword,type SecretContext } from "../src/lib/external-secrets/envelope";
 import { DemoLocalKeyProtector,initializeDemoKeyring,loadDemoKeyProtector,addDemoKeyVersion } from "../src/lib/external-secrets/local-keys";
 import { storePreparedExternalAccount,rewrapPreparedExternalAccounts,externalSecretContext,initializeDemoKeyringForDatabase } from "../src/lib/external-secrets/storage";

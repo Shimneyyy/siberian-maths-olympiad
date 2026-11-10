@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { requestConsentWithdrawal, ownWithdrawalRequests, markWithdrawalReviewed, auditRetention, auditCutoff } from "../src/lib/data-lifecycle";
 import { personalHistory } from "../src/lib/personal-history";
 process.env.DEMO_REGISTRATION = "true";

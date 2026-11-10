@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { addDemoKeyVersion,loadDemoKeyProtector } from "../src/lib/external-secrets/local-keys";
 import { rewrapPreparedExternalAccounts,initializeDemoKeyringForDatabase } from "../src/lib/external-secrets/storage";
 async function main(){

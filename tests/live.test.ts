@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { chromium, type BrowserContext } from "playwright";
 import { hashPassword } from "better-auth/crypto";
 import { randomUUID } from "node:crypto";
@@ -12,7 +12,16 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox"] });
   const errors: string[] = [];
-  const newContext = async () => { const context = await browser.newContext(); context.on("page", page => page.on("pageerror", error => errors.push(error.message))); return context; };
+  const newContext = async () => {
+    const context = await browser.newContext();
+    context.on("page", page => {
+      page.on("pageerror", error => errors.push(error.message));
+      page.on("console", message => {
+        if (message.text().includes("Calling client.query()")) errors.push("PG_CONCURRENT_QUERY_WARNING");
+      });
+    });
+    return context;
+  };
   const tag = randomUUID(), password = `Synthetic-browser-${tag}`;
   const ids: string[] = [];
   let editionId: string | undefined, venueId: string | undefined, universityId: string | undefined, courseId: string | undefined;

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { existsSync } from "node:fs";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaPg } from "../src/lib/pg-adapter";
 import { PrismaClient } from "@prisma/client";
 import assert from "node:assert/strict";
 import { hashPassword } from "better-auth/crypto";
