@@ -49,21 +49,50 @@ wsl -d Ubuntu --cd "$PWD"
 от Ubuntu, подставьте его точное имя после `-d`.
 
 Теперь команды ниже выполняются **в Ubuntu**, а начальная текущая папка — ваш
-Windows-проект. Сначала запомните её, затем создайте отдельный checkout в Linux:
+Windows-проект. Сначала проверьте источник без закрытия оболочки:
 
 ```bash
-set -e
-SMO_WINDOWS_SOURCE="$PWD"
-test -f "$SMO_WINDOWS_SOURCE/.env"
-mkdir -p ~/projects
-git clone --branch work https://github.com/Shimneyyy/siberian-maths-olympiad.git ~/projects/siberian-maths-olympiad
-cd ~/projects/siberian-maths-olympiad
-install -m 600 "$SMO_WINDOWS_SOURCE/.env" .env
-if [ -d "$SMO_WINDOWS_SOURCE/.local" ]; then
-  cp -R "$SMO_WINDOWS_SOURCE/.local" .
-  chmod -R go-rwx .local
-fi
 set +e
+SMO_WINDOWS_SOURCE="$PWD"
+pwd
+if [ -f "$SMO_WINDOWS_SOURCE/.env" ]; then
+  echo ".env найден"
+else
+  echo ".env не найден — остановитесь и проверьте папку Windows-проекта"
+fi
+```
+
+Продолжайте только после «.env найден». Переменная SMO_WINDOWS_SOURCE действует
+только в этом окне Ubuntu. При открытии нового окна снова выполните блок выше
+из Windows-папки проекта. Не создавайте новую .env взамен потерянной конфигурации.
+
+Следующий блок вставьте **целиком, включая круглые скобки**. Они ограничивают
+`set -e` дочерней оболочкой: при ошибке копирование остановится, а окно Ubuntu
+останется открытым. К существующему Linux-checkout этот блок не применяется.
+
+```bash
+(
+  set -e
+  test -f "$SMO_WINDOWS_SOURCE/.env" || {
+    echo ".env не найден. Проверьте SMO_WINDOWS_SOURCE; перенос не начат."
+    exit 1
+  }
+  mkdir -p ~/projects
+  git clone --branch work https://github.com/Shimneyyy/siberian-maths-olympiad.git ~/projects/siberian-maths-olympiad
+  cd ~/projects/siberian-maths-olympiad
+  install -m 600 "$SMO_WINDOWS_SOURCE/.env" .env
+  if [ -d "$SMO_WINDOWS_SOURCE/.local" ]; then
+    cp -R "$SMO_WINDOWS_SOURCE/.local" .
+    chmod -R go-rwx .local
+  fi
+  echo "Перенос завершён. Теперь перейдите в Linux-checkout."
+)
+```
+
+Только после сообщения «Перенос завершён» выполните:
+
+```bash
+cd ~/projects/siberian-maths-olympiad
 ```
 
 Если папка назначения уже существует, clone остановится: используйте существующий
