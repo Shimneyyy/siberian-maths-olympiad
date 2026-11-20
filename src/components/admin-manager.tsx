@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -14,7 +15,7 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
   async function send(path: string, body: unknown) {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await clientFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
       setMessage(response.ok ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email." : result.error || "Ошибка");
       if (response.ok) router.refresh();

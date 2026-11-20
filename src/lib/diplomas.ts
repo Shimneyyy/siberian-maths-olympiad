@@ -16,10 +16,9 @@ const proof={password:z.string().min(1).max(128),confirmed:z.literal(true)};
 const selectionSchema=z.array(z.object({itemId:z.uuid(),documentId:z.uuid().nullable(),revision:z.int().nonnegative()}).strict()).min(1).max(1000);
 export function diplomaStorage(){return new DemoQuarantine(process.env.DIPLOMA_DIRECTORY||".local/diplomas",50*1024*1024);}
 export async function diplomaChief(db:PrismaClient|Prisma.TransactionClient,actorId:string,editionId:string){await authorizeStaff(db,actorId,"diplomas:publish",editionId);assertDemoRegistration((await db.user.findUniqueOrThrow({where:{id:actorId}})).email);}
-const preparing = new Set<string>();
+import { withPreparationLease } from "./private-files/preparation-lease";
 export async function prepareDiplomaBatch(db: PrismaClient, actorId: string, raw: unknown, store=diplomaStorage()) {
- if(preparing.has(actorId))throw new OlympiadError("CONFLICT","Предыдущая загрузка ещё обрабатывается");
- preparing.add(actorId);try{return await prepareDiplomaBatchInternal(db,actorId,raw,store);}finally{preparing.delete(actorId);}
+ return withPreparationLease(db,actorId,()=>prepareDiplomaBatchInternal(db,actorId,raw,store));
 }
 async function prepareDiplomaBatchInternal(db:PrismaClient,actorId:string,raw:unknown,store=diplomaStorage()){
  const input=scope.extend({...proof,id:z.uuid(),bytes:z.instanceof(Uint8Array)}).strict().parse(raw);

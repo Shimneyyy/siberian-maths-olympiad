@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,7 +19,7 @@ export function ProfileEditor({ view, enabled }: { view: View; enabled: boolean 
       const body = { fullName: data.get("fullName"), universityId: data.get("universityId"), courseId: data.get("courseId"), revision: view.revision,
         ...(annual ? { editionId: view.editionId, participationId: view.participationId } : {}),
         ...(view.chief ? { reason: data.get("reason"), password: data.get("password") } : {}) };
-      const response = await fetch(annual ? "/api/participations/correction" : "/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await clientFetch(annual ? "/api/participations/correction" : "/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
       setMessage(response.ok ? "Изменения сохранены. Заявки других лет не менялись." : result.error || "Не удалось сохранить");
       if (response.ok) router.refresh();

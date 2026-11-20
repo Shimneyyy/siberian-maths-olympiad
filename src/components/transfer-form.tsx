@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ export function TransferForm({ view }: { view: { editionId: string; participatio
   return <form method="post" className="space-y-4" onSubmit={async e => {
     e.preventDefault(); const form = new FormData(e.currentTarget); setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/participations/transfer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: view.editionId, participationId: view.participationId, revision: view.revision, editionVenueId: form.get("venue"), reason: form.get("reason"), password: form.get("password"), confirmed: form.get("confirmed") === "on" }) });
+      const response = await clientFetch("/api/participations/transfer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: view.editionId, participationId: view.participationId, revision: view.revision, editionVenueId: form.get("venue"), reason: form.get("reason"), password: form.get("password"), confirmed: form.get("confirmed") === "on" }) });
       const result = await response.json(); if(!response.ok) throw new Error(result.error || "Перенос недоступен");
       setDone(true); setMessage("Площадка изменена. Уведомление поставлено в очередь.");
     } catch(e) { setMessage(e instanceof Error ? e.message : "Повторите позже"); } finally { setBusy(false); }

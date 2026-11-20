@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -35,7 +36,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     const value = String(data.get("code") || "");
     try {
       if (mode === "register") {
-        const response = await fetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        const response = await clientFetch("/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           ...(hasLegacy ? { legacyNsuhwLogin: data.get("legacyLogin") } : { firstNameLatin: data.get("firstNameLatin"), lastNameLatin: data.get("lastNameLatin") }),
           name: data.get("name"), email: address, password, universityId: data.get("universityId"), courseId: data.get("courseId"), demoConsent: data.get("demoConsent") === "on",
         }) });

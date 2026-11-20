@@ -298,6 +298,16 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     const stored = page.getByRole("table").filter({has:page.getByText("Сохранённые личные результаты",{exact:true})});
     await stored.getByText("Приз, учебный",{exact:true}).waitFor();
     assert.ok((await stored.textContent())?.includes("1: 0 · 2: —"));
+    await page.route("**/api/results/publish",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({error:"Учебный отказ публикации"})}));
+    await page.getByLabel("Пароль для публикации",{exact:true}).fill(password);
+    await page.getByLabel("Подтверждаю публикацию всей выбранной загрузки",{exact:true}).check();
+    await page.getByRole("button",{name:"Опубликовать эту загрузку",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Учебный отказ публикации"}).waitFor();
+    assert.equal(await stored.count(),0,"Denied publication hides cached personal results");
+    await page.unroute("**/api/results/publish");
+    await page.getByRole("button",{name:"Показать сохранённые загрузки",exact:true}).click();
+    await page.getByRole("button",{name:"Проверить результаты этой загрузки",exact:true}).click();
+    await stored.getByText("Приз, учебный",{exact:true}).waitFor();
     // E08: publish a reviewed batch, read only one's own, then replace display with final.
     await db.rateLimit.deleteMany();
     assert.equal((await post(existingContext,"auth/sign-in/email",{email:transferred.email,password})).status(),200);

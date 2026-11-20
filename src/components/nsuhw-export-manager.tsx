@@ -1,11 +1,12 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Button } from "@/components/ui/button";
 type View={existingParticipants:{id:string;fullName:string;login:string}[];selectionHash:string;count:number;participants:{id:string;fullName:string;login:string}[];batches:{id:string;createdAt:string;confirmedAt:string|null;count:number}[]};
 export function NsuhwExportManager({editions}:{editions:{id:string;year:number}[]}){
  const hydrated=useHydrated(),[editionId,setEdition]=useState(editions[0]?.id??""),[view,setView]=useState<View|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
- async function api(path:string,body:unknown){const r=await fetch(`/api/nsuhw/exports${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(!r.ok){const d=await r.json();throw new Error(d.error||"Передача недоступна");}return r;}
+ async function api(path:string,body:unknown){const r=await clientFetch(`/api/nsuhw/exports${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(!r.ok){const d=await r.json();throw new Error(d.error||"Передача недоступна");}return r;}
  async function load(){setView(await(await api("/search",{editionId})).json());}
  async function action(fn:()=>Promise<void>){setBusy(true);setMessage("");try{await fn();}catch(e){setView(null);setMessage(e instanceof Error?e.message:"Ошибка");}finally{setBusy(false);}}
  return <section className="space-y-4"><p>Только учебные данные. Файл содержит отдельные пароли nsuhw. Не отправляйте его обычной почтой и не размещайте по общей ссылке. Загрузите файл в nsuhw через защищённое соединение и затем удалите с компьютера. На сервере файл не сохраняется. Не перезаписывайте старые аккаунты на nsuhw; при конфликте логина остановите загрузку и сверьте его с ответственным.</p>

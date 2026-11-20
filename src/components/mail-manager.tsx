@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useRef, useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ export function MailManager({ editions }: { editions: { id: string; year: number
   const [batches, setBatches] = useState<Batch[]>([]), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const field = "block w-full rounded border p-2";
   async function api(path: string, body: unknown) {
-    const response = await fetch(`/api/mail-batches${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const response = await clientFetch(`/api/mail-batches${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const result = await response.json(); if (!response.ok) throw new Error(result.error || "Ошибка рассылки"); return result;
   }
   async function load() { setBatches(await api("/search", { editionId })); }

@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
@@ -25,7 +26,7 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
       pending = true;
       const current = ++requestId.current;
       try {
-        const response = await fetch("/api/registrations/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query), cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]) });
+        const response = await clientFetch("/api/registrations/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query), cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]) });
         const result = await response.json();
         if (disposed || current !== requestId.current) return;
         if (!response.ok) {
@@ -50,16 +51,21 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
     setFilters((old) => ({ ...old, ...patch, page: 1 }));
     setData(null);
   }
+  function clearAccess() {
+    appliedQuery.current=null;
+    requestId.current++;
+    setData(null); setFacets({universityNames:[],courseLabels:[],teamNames:[]}); setBusy(false);
+  }
   async function load(query: RegistrationsQuery) {
     const current = ++requestId.current;
     setBusy(true); setMessage("");
     // Never keep another edition's or a previously authorized page visible on error.
     setData(null);
     try {
-      const response = await fetch("/api/registrations/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query), cache: "no-store" });
+      const response = await clientFetch("/api/registrations/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query), cache: "no-store" });
       const result = await response.json();
       if (requestId.current !== current) return;
-      if (!response.ok) { if (response.status === 401 || response.status === 403) setFacets({ universityNames: [], courseLabels: [], teamNames: [] }); setMessage(result.error || "Не удалось получить список."); return; }
+      if (!response.ok) { if (response.status === 401 || response.status === 403) clearAccess(); setMessage(result.error || "Не удалось получить список."); return; }
       appliedQuery.current = { ...query, page: (result as Result).page };
       setFacets((result as Result).filters); setData(result as Result); setFilters({ ...query, page: (result as Result).page });
     } catch { if (requestId.current === current) setMessage("Не удалось получить список. Повторите запрос."); }
@@ -69,27 +75,27 @@ export function RegistrationsTable({ options, initial }: { options: Options; ini
     const current = ++requestId.current;
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: filters.editionId, participationId: row.id, revision: row.attendance.revision, status }) });
+      const response = await clientFetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: filters.editionId, participationId: row.id, revision: row.attendance.revision, status }) });
       const result = await response.json();
       if (current !== requestId.current) return;
-      if (!response.ok) { setMessage(result.error || "Не удалось изменить явку"); if ([401,403].includes(response.status)) setData(null); return; }
+      if (!response.ok) { setMessage(result.error || "Не удалось изменить явку"); if ([401,403].includes(response.status)) clearAccess(); return; }
       setData(old => old ? { ...old, rows: old.rows.map(p => p.id === row.id ? { ...p, attendance: result } : p) } : null);
-    } catch { if (current === requestId.current) setMessage("Не удалось получить ответ. Обновите список перед повтором."); }
+    } catch { if (current === requestId.current) { clearAccess(); setMessage("Не удалось получить ответ. Обновите список перед повтором."); } }
     finally { if (current === requestId.current) setBusy(false); }
   }
   async function download() {
     const current = ++requestId.current;
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/registrations/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(filters), cache: "no-store" });
+      const response = await clientFetch("/api/registrations/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(filters), cache: "no-store" });
       if (current !== requestId.current) return;
-      if (!response.ok) { const result = await response.json(); setMessage(result.error || "Выгрузка недоступна"); if ([401,403].includes(response.status)) { setData(null); setFacets({ universityNames: [], courseLabels: [], teamNames: [] }); } return; }
+      if (!response.ok) { const result = await response.json(); setMessage(result.error || "Выгрузка недоступна"); if ([401,403].includes(response.status)) clearAccess(); return; }
       const blob = await response.blob();
       if (current !== requestId.current) return;
       const url = URL.createObjectURL(blob), link = document.createElement("a");
       try { link.href = url; link.download = "registrations.csv"; document.body.appendChild(link); link.click(); }
       finally { link.remove(); URL.revokeObjectURL(url); }
-    } catch { if (current === requestId.current) setMessage("Не удалось скачать выгрузку"); }
+    } catch { if (current === requestId.current) { clearAccess(); setMessage("Не удалось скачать выгрузку"); } }
     finally { if (current === requestId.current) setBusy(false); }
   }
   if (!options.editions.length) return <p>У вас нет действующих назначений на годы или площадки олимпиады.</p>;

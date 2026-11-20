@@ -29,6 +29,7 @@ ADR сохраняет причину/последствия решения; д�
 - [PRD](PRD.md): неизменённые исходные требования и ответы заказчика.
 - [ARCHITECTURE](ARCHITECTURE.md): текущие компоненты, связи и матрица ролей.
 - [SECURITY](SECURITY.md): действующая модель защиты и её ограничения.
+- [CATALOGS](contracts/CATALOGS.md): ведение общих вузов и курсов главным.
 - [TESTING](TESTING.md), [MANUAL_TESTING](MANUAL_TESTING.md): запуск и покрытие.
 - [OPERATIONS](OPERATIONS.md), [WINDOWS_WSL](WINDOWS_WSL.md): обслуживание/перенос.
 - [LEGAL_PLACEHOLDERS](LEGAL_PLACEHOLDERS.md): незакрытые юридические условия.

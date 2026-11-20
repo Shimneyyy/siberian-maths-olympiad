@@ -28,8 +28,8 @@ export function createAuth(database: PrismaClient | Prisma.TransactionClient, se
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => send({ to: user.email, subject: "Восстановление доступа к ЛК СМО", text: `Для смены пароля откройте ссылку: ${url}\nЕсли вы не запрашивали смену пароля, проигнорируйте письмо.` }),
     },
-    rateLimit: { enabled: true, storage: "database", window: 60, max: 30,
-      customRules: { "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 }, "/request-password-reset": { window: 60, max: 3 } } },
+    // Public HTTP routes use an atomic, HMAC-addressed PostgreSQL limiter.
+    rateLimit: { enabled: false },
     plugins: [
       emailOTP({ otpLength: 6, expiresIn: 600, allowedAttempts: 5, storeOTP: "hashed",
         sendVerificationOnSignUp: true, overrideDefaultEmailVerification: true,

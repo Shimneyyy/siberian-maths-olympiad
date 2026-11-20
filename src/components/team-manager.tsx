@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,7 +12,7 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
   async function act(data: Record<string, unknown>) {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/teams/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const response = await clientFetch("/api/teams/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       const result = await response.json();
       setMessage(response.ok ? (data.operation === "invite" ? "Запрос обработан. Приглашение доступно участнику того же вуза и года, в том числе капитану другой команды. Письмо не отправляется." : "Изменения сохранены.") : result.error || "Действие недоступно");
       if (response.ok) router.refresh();
@@ -26,7 +27,7 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
       {e.team ? <><h3>{e.team.name}</h3><p>Тренер: {e.team.coachName}</p><ul>{e.team.members.map(m => <li key={m.id}>{m.fullName}{m.id === e.team!.captainParticipationId ? " · капитан" : ""}</li>)}</ul></> : e.canChange && <form method="post" className="space-y-3" onSubmit={async event => {
         event.preventDefault(); const f = new FormData(event.currentTarget); setBusy(true); setMessage("");
         try {
-          const response = await fetch("/api/teams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: e.editionId, coachName: f.get("coachName") }) });
+          const response = await clientFetch("/api/teams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: e.editionId, coachName: f.get("coachName") }) });
           const result = await response.json(); setMessage(response.ok ? "Команда создана, вы её капитан и первый участник." : result.error || "Не удалось создать команду");
           if (response.ok) router.refresh();
         } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); } finally { setBusy(false); }

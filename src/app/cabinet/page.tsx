@@ -28,6 +28,7 @@ export default async function Cabinet() {
     ] : []),
     ...(user.role === "CHIEF_ORGANIZER" ? [
       ["/cabinet/organization", "Годы и площадки"],
+      ["/cabinet/catalogs", "Вузы и курсы"],
       ["/cabinet/mail", "Рассылки"],
       ["/cabinet/nsuhw-export", "Передача аккаунтов в nsuhw"],
       ["/cabinet/results-import", "Загрузка личных результатов"],

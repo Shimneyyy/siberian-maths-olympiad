@@ -5,11 +5,13 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { assignVenueStaff, revokeVenueStaff } from "../src/lib/staff";
+import { hashPassword } from "better-auth/crypto";
 import { AccessDenied } from "../src/lib/access";
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 after(() => db.$disconnect());
 test("chief assigns and revokes staff in own edition; roles cannot be combined", async () => {
-  const tag = randomUUID();
+  process.env.DEMO_REGISTRATION="true";
+  const tag = randomUUID(), password=`Synthetic-${tag}`;
   const actor = await db.user.create({ data: { email: `chief-${tag}@example.test`, name: "Тестовый организатор", role: "CHIEF_ORGANIZER", emailVerified: true } });
   const student = await db.user.create({ data: { email: `student-${tag}@example.test`, name: "Тестовый студент" } });
   const email = `venue-${tag}@example.test`;
@@ -20,10 +22,14 @@ test("chief assigns and revokes staff in own edition; roles cannot be combined",
   const foreign = await db.editionVenue.create({ data: { editionId: other.id, venueId: venue.id, address: "Тестовый адрес" } });
   try {
     await db.editionStaffGrant.create({ data: { userId: actor.id, editionId: edition.id } });
-    const input = { editionId: edition.id, editionVenueId: site.id, email, name: "Тестовый организатор площадки" };
+    await db.account.create({data:{userId:actor.id,accountId:actor.id,providerId:"credential",password:await hashPassword(password)}});
+    const input = { password, editionId: edition.id, editionVenueId: site.id, email, name: "Тестовый организатор площадки" };
     await assert.rejects(assignVenueStaff(db, actor.id, { ...input, email: student.email }), AccessDenied);
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: student.id } })).role, "STUDENT");
     await assert.rejects(assignVenueStaff(db, actor.id, { ...input, editionId: other.id, editionVenueId: foreign.id }), AccessDenied);
+    await assert.rejects(assignVenueStaff(db,actor.id,{...input,password:undefined}));
+    await assert.rejects(assignVenueStaff(db,actor.id,{...input,password:"wrong"}),AccessDenied);
+    await db.rateLimit.deleteMany({where:{key:`staff-reauth:${actor.id}`}});
     const userId = await assignVenueStaff(db, actor.id, input);
     assert.equal(await assignVenueStaff(db, actor.id, input), userId, "Reassignment does not create duplicate users");
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: userId } })).role, "VENUE_ORGANIZER");
@@ -33,7 +39,8 @@ test("chief assigns and revokes staff in own edition; roles cannot be combined",
     const foreignSession = await db.session.create({ data: { token: randomUUID(), userId: foreignStaff.id, expiresAt: new Date(Date.now() + 60000) } });
     try {
       for (const targetId of [student.id, foreignStaff.id, randomUUID()]) {
-        await assert.rejects(revokeVenueStaff(db, actor.id, { editionId: edition.id, editionVenueId: site.id, userId: targetId }), AccessDenied);
+        await db.rateLimit.deleteMany({where:{key:`staff-reauth:${actor.id}`}});
+        await assert.rejects(revokeVenueStaff(db, actor.id, { password, editionId: edition.id, editionVenueId: site.id, userId: targetId }), AccessDenied);
       }
       assert.ok(await db.session.findUnique({ where: { id: studentSession.id } }), "Unrelated student keeps their session");
       assert.ok(await db.session.findUnique({ where: { id: foreignSession.id } }), "Foreign organizer keeps their session");
@@ -44,12 +51,12 @@ test("chief assigns and revokes staff in own edition; roles cannot be combined",
       await db.user.delete({ where: { id: foreignStaff.id } });
     }
     const session = await db.session.create({ data: { token: randomUUID(), userId, expiresAt: new Date(Date.now() + 60000) } });
-    await revokeVenueStaff(db, actor.id, { editionId: edition.id, editionVenueId: site.id, userId });
+    await revokeVenueStaff(db, actor.id, { password, editionId: edition.id, editionVenueId: site.id, userId });
     assert.equal(await db.session.findUnique({ where: { id: session.id } }), null);
     assert.ok((await db.venueStaffAssignment.findUniqueOrThrow({ where: { userId_editionVenueId: { userId, editionVenueId: site.id } } })).revokedAt);
     // A replay must not terminate a session created after the assignment was revoked.
     const newSession = await db.session.create({ data: { token: randomUUID(), userId, expiresAt: new Date(Date.now() + 60000) } });
-    await revokeVenueStaff(db, actor.id, { editionId: edition.id, editionVenueId: site.id, userId });
+    await revokeVenueStaff(db, actor.id, { password, editionId: edition.id, editionVenueId: site.id, userId });
     assert.ok(await db.session.findUnique({ where: { id: newSession.id } }));
     assert.equal(await db.auditEvent.count({ where: { actorId: actor.id, action: "VENUE_STAFF_REVOKED" } }), 1);
     const audit = await db.auditEvent.findMany({ where: { actorId: actor.id } });
@@ -64,6 +71,7 @@ test("chief assigns and revokes staff in own edition; roles cannot be combined",
     await db.editionVenue.deleteMany({ where: { venueId: venue.id } });
     await db.venue.delete({ where: { id: venue.id } });
     await db.olympiadEdition.deleteMany({ where: { id: { in: [edition.id, other.id] } } });
+    await db.rateLimit.deleteMany({where:{key:`staff-reauth:${actor.id}`}});
     await db.user.deleteMany({ where: { id: { in: userIds } } });
   }
 });

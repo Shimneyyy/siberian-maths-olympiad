@@ -10,3 +10,17 @@
   --color-muted: var(--muted); --color-border: var(--border);
 }
 body { background: var(--background); color: var(--foreground); font-family: Arial, sans-serif; }
+
+/* Compact forms and self-contained tables, including 375px viewports. */
+main, section, article, fieldset, form, label, details { min-width: 0; }
+main { overflow-wrap: anywhere; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { max-width: 100%; }
+input, select, textarea, button, a { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+th, td { padding: .65rem .75rem; vertical-align: top; }
+label { line-height: 1.5; }
+@media (max-width: 639px) {
+  main { padding-inline: 1rem; }
+  button { white-space: normal; }
+}

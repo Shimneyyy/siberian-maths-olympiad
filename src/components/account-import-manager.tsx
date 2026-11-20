@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -10,7 +11,7 @@ export function AccountImportManager({ editions }: { editions: { id: string; yea
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   function clear() { setPreview(null); setId(""); setMessage(""); }
   async function api(path: string, body: unknown) {
-    const response = await fetch(`/api/nsuhw/import/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+    const response = await clientFetch(`/api/nsuhw/import/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
     const value = await response.json(); if (!response.ok) throw new Error(value.error || "Не удалось выполнить импорт"); return value;
   }
   return <section className="space-y-4">

@@ -9,6 +9,9 @@ import { sendMail } from "@/lib/mail";
 import { ExternalKeyConfigurationError } from "@/lib/external-secrets/local-keys";
 import { registrationSchema, DEMO_CONSENT_TEXT, DEMO_CONSENT_VERSION } from "@/lib/registration-rules";
 
+import { limitAuthRequest } from "@/lib/atomic-rate-limit";
+import { AdminRateLimit } from "@/lib/admin";
+
 class AuthResponseError extends Error {
   constructor(readonly response: Response) { super("Authentication rejected"); }
 }
@@ -62,11 +65,16 @@ async function handle(request: Request) {
   }
 }
 async function dispatch(request: Request) {
+  try {
   if (request.method === "POST") {
     try {
-      const { raw } = await readJsonBody(request);
+      const { raw, value } = await readJsonBody(request);
+      const path=new URL(request.url).pathname.replace(/^\/api\/auth\//, "");
+      if(routes.has(path) && request.headers.get("origin")===new URL(process.env.BETTER_AUTH_URL||"http://localhost:3000").origin) await limitAuthRequest(db,path,value);
       request = new Request(request.url, { method: request.method, headers: request.headers, body: raw });
     } catch (error) {
+      if(error instanceof AdminRateLimit) return Response.json({error:"Слишком много попыток. Повторите позже."},{status:429,headers:{"Cache-Control":"private, no-store","Retry-After":"60"}});
+      if(!(error instanceof BodyTooLarge) && !(error instanceof SyntaxError)) throw error;
       return Response.json({ error: "Invalid body" }, { status: error instanceof BodyTooLarge ? 413 : 400, headers: { "Cache-Control": "no-store" } });
     }
   }
@@ -74,6 +82,7 @@ async function dispatch(request: Request) {
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;
+  } catch { return Response.json({error:"Сервис временно недоступен. Повторите позже."},{status:503,headers:{"Cache-Control":"private, no-store","Referrer-Policy":"no-referrer"}}); }
 }
 export const GET = dispatch;
 export const POST = dispatch;

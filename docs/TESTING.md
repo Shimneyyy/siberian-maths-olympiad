@@ -35,13 +35,13 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 | npm run lint | ESLint |
 | npm run typecheck | Next typegen и TypeScript noEmit; генерирует .next |
 | npm run test:pg | pg-adapter/registrations с --throw-deprecation; PostgreSQL |
-| npm run test:db | Последовательные service/DB/CLI тесты из package.json, включая scopes, гонки команд, миграцию самоввода логина, SQL-инварианты, новый CSV, импорт, outbox, lifecycle и parser-примитивы |
+| npm run test:db | Последовательные service/DB/CLI тесты из package.json, включая отказ session/audit, конкурентные auth limits, staff reauth, каталоги, preparation leases, orphan staging, scopes, гонки команд, миграцию самоввода логина, SQL-инварианты, новый CSV, импорт, outbox, lifecycle и parser-примитивы |
 | npm run test:files | Дипломы/PDF/ZIP/карантин/протокол и реальный ClamAV/EICAR; PostgreSQL, prlimit, сканер |
 | npm run test:ops | Managed backup и настоящий restore-drill; PostgreSQL/Docker, ClamAV, synthetic env |
 | npm run test:http | Шесть auth/HTTP сценариев через dev :3100, Mailpit; предоставленная тестовая БД |
 | npm run test:registration | Два отдельных запуска registration-http: настоящий отказ keyring и SMTP, UI/rollback/сохранение аккаунта |
 | npm run test:account-switch | Chromium: auth/autofill/меню/пустой admin → CLI выпуска → назначение; временная БД |
-| npm run test:live | Две Chromium-сессии, удаление команды/входящие приглашения/профиль/явка/offline/отзыв; предоставленная тестовая БД |
+| npm run test:live | Две Chromium-сессии, удаление команды/входящие приглашения/профиль/явка/offline/отзыв, manual export 403/polling, каталоги и 375px; предоставленная тестовая БД |
 | npm run test:communications | Chromium/HTTP/SMTP, объявления/рассылки/nsuhw/результаты/дипломы/история; временная БД |
 | npm run test:load | Временная БД, optimized build/start, 5000 участников/год × 2, 200 сессий, 600 измеренных запросов |
 | npm run build | Next build |

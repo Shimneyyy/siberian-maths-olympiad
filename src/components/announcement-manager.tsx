@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ export function AnnouncementManager({ editions, chief }: { editions: Edition[]; 
   const [items, setItems] = useState<Item[]>([]), [draft, setDraft] = useState<Item | null>(null);
   const [message, setMessage] = useState(""), [busy, setBusy] = useState(false);
   async function api(path: string, body: unknown) {
-    const response = await fetch(`/api/announcements${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const response = await clientFetch(`/api/announcements${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json(); if (!response.ok) throw new Error(data.error || "Повторите позже"); return data;
   }
   async function load() { setItems(await api("/search", { editionId })); }

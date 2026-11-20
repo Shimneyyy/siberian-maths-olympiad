@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -13,7 +14,7 @@ export function StaffManager({ venues, staff }: { venues: Venue[]; staff: Staff[
     if (!password) { setMessage("Введите текущий пароль для подтверждения действия."); return; }
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/staff", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, password }) });
+      const response = await clientFetch("/api/staff", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, password }) });
       setMessage(response.ok ? "Изменения сохранены." : "Не удалось выполнить действие. Проверьте полномочия и данные.");
       if (response.ok) router.refresh();
     } catch { setMessage("Повторите позже."); } finally { setBusy(false); setPassword(""); }

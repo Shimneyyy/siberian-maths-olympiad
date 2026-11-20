@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -10,7 +11,7 @@ export function CancellationForm({ view, enabled }: { view: Awaited<ReturnType<t
   return <form method="post" className="space-y-4 rounded border border-border p-6" onSubmit={async event => {
     event.preventDefault(); const form = event.currentTarget, f = new FormData(form); setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/participations/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: view.editionId, participationId: view.participationId, revision: view.revision, confirmed: f.get("confirmed") === "on", ...(view.chief ? { reason: f.get("reason"), password: f.get("password") } : {}) }) });
+      const response = await clientFetch("/api/participations/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId: view.editionId, participationId: view.participationId, revision: view.revision, confirmed: f.get("confirmed") === "on", ...(view.chief ? { reason: f.get("reason"), password: f.get("password") } : {}) }) });
       const result = await response.json();
       if (!response.ok) { setMessage(result.error || "Не удалось отменить участие"); return; }
       router.push(view.chief ? "/cabinet/registrations" : "/cabinet/olympiad"); router.refresh();

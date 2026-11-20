@@ -2,7 +2,7 @@ import "dotenv/config";
 import { before,after,test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readdir,readFile,mkdtemp,rm,writeFile } from "node:fs/promises";
+import { readdir,readFile,mkdtemp,rm,writeFile,utimes,access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -11,6 +11,7 @@ import { PrismaPg } from "../src/lib/pg-adapter";
 import { hashPassword } from "better-auth/crypto";
 import { PDFDocument } from "pdf-lib";
 import { ZipFile } from "yazl";
+import { stageOrphanFiles } from "../src/lib/private-files/orphan-staging";
 import { DemoQuarantine } from "../src/lib/private-files/quarantine";
 import { prepareDiplomaBatch,diplomaBatchView,applyDiplomaBatch,publishDiplomaBatch,ownDiplomas,downloadDiploma } from "../src/lib/diplomas";
 process.env.DEMO_REGISTRATION="true";
@@ -68,6 +69,12 @@ test("E10 replacement leaves old available until publication, then closes its ve
  assert.equal((await ownDiplomas(db,owner.user.id)).length,1);assert.equal(await db.diplomaVersion.count({where:{documentId:doc.id}}),2);
  await assert.rejects(downloadDiploma(db,owner.user.id,{documentId:doc.id,versionId:doc.currentVersionId},f.store));
  await f.reset();const third=await f.prepare([[`${owner.login}.pdf`,old]]);await f.apply(third.id);await f.publish(third.id);assert.equal((await ownDiplomas(db,owner.user.id)).length,2);
+ // Cleanup must retain superseded and current published PDFs, regardless of age.
+ const files=await readdir(f.root);for(const name of files)await utimes(join(f.root,name),new Date(0),new Date(0));
+ const cleanup=await stageOrphanFiles(db,{directory:f.root,minAgeHours:24,apply:true,confirmedQuiesced:true});
+ assert.equal(cleanup.candidates,0);assert.equal(cleanup.staged,0);
+ for(const name of files)await access(join(f.root,name));
+
 });
 test("E10 rejects wrong year, role, missing verified email/password/confirmation and cross-owner replacement",async()=>{
  const f=await fixture(),bytes=await pdf(),batch=await f.prepare([[`${f.people[0].login}.pdf`,bytes]]),command={...f.scope,batchId:batch.id,password,confirmed:true};

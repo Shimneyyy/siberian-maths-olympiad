@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useHydrated } from "@/lib/use-hydrated";
 import { NsuhwSecretPanel } from "./nsuhw-secret-panel";
@@ -10,14 +11,14 @@ export function LegacyNsuhwManager() {
   const [login, setLogin] = useState<Login | null>(null), [hasPrepared, setHasPrepared] = useState(false);
   const [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false), [message, setMessage] = useState("");
   async function api(body?: unknown) {
-    const response = await fetch("/api/nsuhw/legacy", { method: body === undefined ? "GET" : "POST", cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+    const response = await clientFetch("/api/nsuhw/legacy", { method: body === undefined ? "GET" : "POST", cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Повторите позже");
     return result;
   }
   async function load() {
     const own = await api();
-    const response = await fetch("/api/nsuhw/prepared", { cache: "no-store" });
+    const response = await clientFetch("/api/nsuhw/prepared", { cache: "no-store" });
     if (!response.ok) throw new Error("Не удалось загрузить данные аккаунта");
     const prepared = await response.json();
     setLogin(own); setHasPrepared(!!prepared); setLoaded(true);

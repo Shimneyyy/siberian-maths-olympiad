@@ -90,7 +90,7 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
     assert.notEqual((await request("/api/auth/reset-password", { token, newPassword: password })).status, 200, "Reset token is single-use");
     assert.notEqual((await request("/api/auth/sign-in/email", { email, password })).status, 200);
     assert.equal((await request("/api/auth/sign-in/email", { email, password: replacement })).status, 200);
-    assert.equal((await request("/api/staff", { editionId: randomUUID(), editionVenueId: randomUUID(), email: `other-${randomUUID()}@example.test`, name: "Другой синтетический пользователь" })).status, 403);
+    assert.equal((await request("/api/staff", { editionId: randomUUID(), editionVenueId: randomUUID(), email: `other-${randomUUID()}@example.test`, name: "Другой синтетический пользователь", password: replacement })).status, 403);
     assert.equal((await request("/api/auth/sign-out", {})).status, 200);
     const challenge = await request("/api/auth/sign-in/email", { email, password: replacement });
     assert.equal(challenge.status, 200);
@@ -455,7 +455,7 @@ test("externally created staff accounts require email proof and retain roles/gra
       if (i === 0) await manageChief(db, user.id, { editionId: edition.id, email: emails[1], name: "Учебный главный", operation: "assign", password: replacement });
       if (i === 1) {
         assert.equal(await db.editionStaffGrant.count({ where: { userId: user.id, editionId: edition.id, revokedAt: null } }), 1);
-        await assignVenueStaff(db, user.id, { editionId: edition.id, editionVenueId: site.id, email: emails[2], name: "Учебный организатор" });
+        await assignVenueStaff(db, user.id, { editionId: edition.id, editionVenueId: site.id, email: emails[2], name: "Учебный организатор", password: replacement });
       }
       if (i === 2) assert.equal(await db.venueStaffAssignment.count({ where: { userId: user.id, editionVenueId: site.id, revokedAt: null } }), 1);
       assert.equal(preserved.role, user.role);

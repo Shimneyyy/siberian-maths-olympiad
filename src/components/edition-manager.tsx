@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -12,7 +13,7 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
   async function send(path: string, method: string, data: unknown) {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const response = await clientFetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       const result = await response.json() as { error?: string };
       setMessage(response.ok ? "Изменения сохранены." : result.error || "Не удалось сохранить.");
       if (response.ok) router.refresh();

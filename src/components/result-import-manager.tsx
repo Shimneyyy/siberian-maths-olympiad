@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -13,7 +14,7 @@ export function ResultImportManager({ editions }: { editions: { id: string; year
   const field = "block w-full rounded border p-2";
   function clear() { setPreview(null); setId(""); setApplied(false); setMessage(""); }
   async function api(path: string, body: unknown) {
-    const response = await fetch(`/api/results/import/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+    const response = await clientFetch(`/api/results/import/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
     const data = await response.json(); if (!response.ok) throw new Error(data.error || "Повторите позже"); return data;
   }
   return <section className="space-y-5">

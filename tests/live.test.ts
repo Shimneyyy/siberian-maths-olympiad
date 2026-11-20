@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 const base = process.env.TEST_BASE_URL;
 if (!base || !["localhost", "127.0.0.1"].includes(new URL(base).hostname)) throw new Error("Local synthetic test server required");
-test("two browser sessions see attendance within ten seconds, reconnect and lose revoked access", { timeout: 180000 }, async () => {
+test("two browser sessions see attendance within ten seconds, reconnect and lose revoked access", { timeout: 300000 }, async () => {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox"] });
   const errors: string[] = [];
@@ -113,10 +113,56 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     await observer.setOffline(false);
     await page.locator(selector).waitFor({ timeout: 10000 });
     assert.equal(await page.locator(selector).inputValue(), "PRESENT");
+    // A manual denial must clear both the rows and the polling query.
+    await page.route("**/api/registrations/export", route => route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({error:"Учебный отказ экспорта"})}));
+    await page.getByRole("button",{name:"Скачать CSV по фильтрам (все страницы)"}).click();
+    await page.getByRole("alert").filter({hasText:"Учебный отказ экспорта"}).waitFor();
+    assert.equal(await page.locator(selector).count(),0);
+    let refreshes=0;const watch=(r: import("playwright").Request)=>{if(r.url().endsWith("/api/registrations/search"))refreshes++;};
+    page.on("request",watch);await page.waitForTimeout(5500);page.off("request",watch);assert.equal(refreshes,0,"Manual 403 stops polling");
+    await page.unroute("**/api/registrations/export");
+    await page.getByRole("button",{name:"Показать участников"}).click();await page.locator(selector).waitFor();
+    for(const width of [375,1280]){
+      await page.setViewportSize({width,height:900});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Roster fits viewport ${width}`);
+      await page.getByLabel("ФИО или email").focus();await page.keyboard.press("Tab");
+      assert.ok(await page.evaluate(()=>document.activeElement?.tagName==="SELECT"),"Filter keyboard order");
+    }
+    const catalogPage=await editor.newPage();await catalogPage.goto(`${base}/cabinet/catalogs`);
+    await catalogPage.getByRole("button",{name:"Показать справочники"}).click();
+    const courseForm=catalogPage.locator("form").filter({has:catalogPage.getByRole("heading",{name:"Добавить курс",exact:true})});
+    const catalogLabel=`Браузерный курс ${tag}`;
+    await courseForm.getByLabel("Название",{exact:true}).fill(catalogLabel);await courseForm.getByLabel("Текущий пароль").fill(password);
+    await courseForm.getByRole("button",{name:"Сохранить запись"}).click();
+    await catalogPage.getByRole("status").filter({hasText:"Справочник сохранён"}).waitFor();
+    const createdCourse=await db.courseOption.findFirstOrThrow({where:{label:catalogLabel}});
+    const editedCatalog=await request(editor,"/api/catalogs",{editionId,kind:"course",id:course.id,revision:0,name:"Новый курс в справочнике",active:false,password});
+    assert.equal(editedCatalog.status(),200);assert.equal((await db.courseOption.findUniqueOrThrow({where:{id:course.id}})).active,false);
+    await db.courseOption.delete({where:{id:createdCourse.id}});
+    assert.equal((await db.participation.findUniqueOrThrow({where:{id:participation.id}})).courseLabel,course.label,"Catalog edit preserves participation snapshot");
+    for(const width of [375,1280]){await catalogPage.setViewportSize({width,height:900});assert.ok(await catalogPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Catalog fits viewport ${width}`);}
+    await catalogPage.close();
+    // Layout smoke coverage across available chief/student forms; no mutations here.
+    for(const [context,paths] of [[editor,["organization","announcements","mail","nsuhw-export","nsuhw-import","results-import","diplomas","catalogs"]],[captainContext,["profile","olympiad","teams","nsuhw","results","history","privacy"]]] as const){
+      const formPage=await context.newPage();
+      for(const path of paths){
+        await formPage.goto(`${base}/cabinet/${path}`);
+        for(const width of [375,1280]){await formPage.setViewportSize({width,height:900});assert.ok(await formPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${path} fits ${width}`);}
+        const focusable=formPage.locator("a:visible, input:visible, select:visible, textarea:visible, button:visible").first();
+        if(await focusable.count()){await focusable.focus();await formPage.keyboard.press("Tab");assert.ok(await formPage.evaluate(()=>document.activeElement!==document.body),`${path} keyboard focus remains reachable`);}
+      }
+      await formPage.close();
+    }
+
     await db.venueStaffAssignment.updateMany({ where: { userId: staff.id }, data: { revokedAt: new Date() } });
     await page.waitForFunction(s => !document.querySelector(s), selector, { timeout: 10000 });
     assert.equal((await request(observer, "/api/attendance", { editionId, participationId: participation.id, revision: 1, status: "ABSENT" })).status(), 403);
     assert.equal((await request(observer, "/api/registrations/search", { editionId })).status(), 403);
+    // Back must revalidate server scopes even if the same user remains signed in.
+    await page.evaluate(()=>history.pushState({},"",location.href+"#scope-check"));
+    await page.goBack();
+    await page.getByText("У вас нет действующих назначений на годы или площадки олимпиады.",{exact:true}).waitFor();
+    assert.equal(await page.locator(selector).count(),0);
     assert.deepEqual(errors, [], "No browser runtime errors");
   } finally {
     await browser.close();

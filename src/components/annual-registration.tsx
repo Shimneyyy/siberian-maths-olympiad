@@ -1,4 +1,5 @@
 "use client";
+import { clientFetch } from "@/lib/client-fetch";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -22,7 +23,7 @@ function EditionRegistration({ edition, view, enabled }: { edition: View["editio
       event.preventDefault(); setBusy(true); setMessage("");
       const form = new FormData(event.currentTarget);
       try {
-        const response = await fetch("/api/participations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        const response = await clientFetch("/api/participations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           editionId: edition.id, fullName: form.get("fullName"), universityId: form.get("universityId"), courseId: form.get("courseId"), format,
           ...(format === "ONSITE" ? { editionVenueId: form.get("editionVenueId") } : { remoteZone: form.get("remoteZone") }),
         }) });
