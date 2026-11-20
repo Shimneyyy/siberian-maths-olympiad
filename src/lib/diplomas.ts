@@ -29,8 +29,8 @@ async function prepareDiplomaBatchInternal(db:PrismaClient,actorId:string,raw:un
  const retry=await db.diplomaBatch.findUnique({where:{id:input.id}});
  if(retry){if(retry.editionId!==input.editionId||retry.actorId!==actorId||retry.archiveHash!==archiveHash)throw new OlympiadError("CONFLICT","Идентификатор загрузки уже использован");return {id:retry.id};}
  const rows=await previewDiplomaZip(buffer,DIPLOMA_ZIP_LIMITS);
- const people=await db.participation.findMany({where:{editionId:input.editionId,user:{role:"STUDENT",emailVerified:true}},select:{id:true,user:{select:{email:true,preparedExternalAccount:{select:{login:true,confirmedAt:true}},legacyNsuhwClaim:{select:{login:true,approvedAt:true}}}}}});
- const owners=new Map<string,string[]>();for(const p of people){if(!p.user.email.endsWith("@example.test"))continue;for(const login of new Set([...(p.user.preparedExternalAccount?.confirmedAt?[p.user.preparedExternalAccount.login]:[]),...(p.user.legacyNsuhwClaim?.approvedAt?[p.user.legacyNsuhwClaim.login]:[])]))owners.set(login,[...(owners.get(login)||[]),p.id]);}
+ const people=await db.participation.findMany({where:{editionId:input.editionId,user:{role:"STUDENT",emailVerified:true}},select:{id:true,user:{select:{email:true,preparedExternalAccount:{select:{login:true,confirmedAt:true}},legacyNsuhwClaim:{select:{login:true}}}}}});
+ const owners=new Map<string,string[]>();for(const p of people){if(!p.user.email.endsWith("@example.test"))continue;for(const login of new Set([...(p.user.preparedExternalAccount?.confirmedAt?[p.user.preparedExternalAccount.login]:[]),...(p.user.legacyNsuhwClaim?[p.user.legacyNsuhwClaim.login]:[])]))owners.set(login,[...(owners.get(login)||[]),p.id]);}
  const created:{key:string;sha256:string}[]=[];const items:Prisma.DiplomaItemCreateManyInput[]=[];const deadline=Date.now()+300000;
  await store.initialize();
  try{

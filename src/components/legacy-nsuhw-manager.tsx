@@ -4,29 +4,38 @@ import { useHydrated } from "@/lib/use-hydrated";
 import { NsuhwSecretPanel } from "./nsuhw-secret-panel";
 import { NsuhwLoginNamesEditor } from "./nsuhw-login-names-editor";
 import { Button } from "@/components/ui/button";
-type Claim = {id:string;login:string;revision:number;approvedAt:string|null;userId?:string;participationId?:string;fullName?:string};
-export function LegacyNsuhwManager({chief,editions}:{chief:boolean;editions:{id:string;year:number}[]}) {
+type Login = { id: string; login: string; revision: number };
+export function LegacyNsuhwManager() {
   const hydrated = useHydrated();
-  const [editionId,setEdition] = useState(editions[0]?.id??""), [claims,setClaims] = useState<Claim[]>([]);
-  const [hasPrepared,setHasPrepared]=useState(false);
-  const [busy,setBusy] = useState(false),[loaded,setLoaded] = useState(false),[message,setMessage] = useState("");
-  async function api(path:string,body?:unknown) {
-    const r=await fetch(`/api/nsuhw/legacy${path}`,{method:body===undefined?"GET":"POST",headers:body===undefined?{}:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
-    const result=await r.json();if(!r.ok)throw new Error(result.error||"Повторите позже");return result;
+  const [login, setLogin] = useState<Login | null>(null), [hasPrepared, setHasPrepared] = useState(false);
+  const [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false), [message, setMessage] = useState("");
+  async function api(body?: unknown) {
+    const response = await fetch("/api/nsuhw/legacy", { method: body === undefined ? "GET" : "POST", cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Повторите позже");
+    return result;
   }
-  async function load(){const result=await api(chief?"/review":"",chief?{editionId}:undefined);if(!chief){const r=await fetch("/api/nsuhw/prepared",{cache:"no-store"});if(!r.ok)throw new Error("Не удалось проверить подготовленные данные");setHasPrepared(!!await r.json());}setClaims(chief?result:result?[result]:[]);setLoaded(true);}
-  async function action(fn:()=>Promise<void>){setBusy(true);setMessage("");try{await fn();}catch(e){setClaims([]);setLoaded(false);setMessage(e instanceof Error?e.message:"Ошибка");}finally{setBusy(false);}}
+  async function load() {
+    const own = await api();
+    const response = await fetch("/api/nsuhw/prepared", { cache: "no-store" });
+    if (!response.ok) throw new Error("Не удалось загрузить данные аккаунта");
+    const prepared = await response.json();
+    setLogin(own); setHasPrepared(!!prepared); setLoaded(true);
+  }
+  async function action(fn: () => Promise<void>) {
+    setBusy(true); setMessage("");
+    try { await fn(); } catch (error) { setLogin(null); setLoaded(false); setMessage(error instanceof Error ? error.message : "Ошибка"); }
+    finally { setBusy(false); }
+  }
   return <section className="space-y-4">
-    {chief?<><label>Год<select value={editionId} disabled={busy} onChange={e=>{setEdition(e.target.value);setClaims([]);setLoaded(false);}}>{editions.map(e=><option key={e.id} value={e.id}>{e.year}</option>)}</select></label><p>Сверьте заявку с ответственным за nsuhw вне сайта. ФИО и знание логина сами по себе не доказывают владение. Здесь видны только участники назначенного вам года с подтверждённым email.</p></>:<p>Если аккаунт nsuhw уже был, укажите его логин. Главный проверит связь после вашей регистрации на год. Пока заявка ожидает проверки, новые данные не генерируются.</p>}
-    <Button disabled={!hydrated||busy||(chief&&!editionId)} onClick={()=>action(load)}>{chief?"Показать заявки":"Проверить мою заявку"}</Button>
-    {!chief&&loaded&&!claims.length&&<><NsuhwLoginNamesEditor onPrepared={()=>setHasPrepared(true)}/><NsuhwSecretPanel/></>}
-    {!chief&&loaded&&!claims.length&&!hasPrepared&&<form method="post" className="space-y-3" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action(async()=>{await api("",{login:f.get("login"),confirmed:f.get("confirmed")==="on"});await load();setMessage("Заявка ожидает проверки главного организатора");});}}>
-      <label className="block">Старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} autoComplete="off" /></label><label><input type="checkbox" name="confirmed" required />Прошу проверить принадлежность старого аккаунта</label><Button disabled={!hydrated||busy}>Отправить на проверку</Button>
-    </form>}
-    {claims.map(c=><article key={c.id} className="space-y-3 rounded border p-4">{chief&&<><p>{c.fullName}</p><p>ID участника: {c.userId}</p></>}<p>Логин nsuhw: {c.login}</p><p>{c.approvedAt?"Привязка подтверждена главным организатором":"Ожидает проверки. Это ещё не подтверждённая привязка"}</p>
-      {chief&&!c.approvedAt&&<form method="post" className="space-y-3" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);action(async()=>{await api("/approve",{editionId,claimId:c.id,revision:c.revision,password:f.get("password"),confirmed:f.get("confirmed")==="on",ownershipChecked:f.get("ownershipChecked")==="on"});await load();setMessage("Привязка подтверждена");});}}><label className="block">Текущий пароль<input className="block w-full rounded border p-2" name="password" type="password" required autoComplete="current-password" maxLength={128}/></label><label className="block"><input name="ownershipChecked" type="checkbox" required/>Сверил принадлежность аккаунта с ответственным за nsuhw</label><label className="block"><input name="confirmed" type="checkbox" required/>Подтверждаю привязку указанного логина к этому участнику</label><Button disabled={!hydrated||busy}>Подтвердить привязку</Button></form>}
-    </article>)}
-    {message&&<p role="status">{message}</p>}
-    {!chief&&claims.length>0&&<p>Новый аккаунт nsuhw взамен не создаётся. Пароль старого аккаунта не переносился в ЛК. Используйте известный вам пароль или восстановление на nsuhw. Для исправления ошибочно указанного логина обратитесь к главному; изменение/отзыв привязки через сайт пока не предусмотрены.</p>}
+    <p>Старый логин сохраняется сразу, без проверки организатором. Он нужен для сопоставления ваших результатов и дипломов. Введите точное написание, включая регистр.</p>
+    <Button disabled={!hydrated || busy} onClick={() => void action(load)}>Показать мой аккаунт nsuhw</Button>
+    {loaded && login && <article className="space-y-3 rounded border p-4"><p>Логин nsuhw: {login.login}</p><p>Старый логин сохранён. Подтверждение организатором не требуется.</p><p>Пароль старого аккаунта не хранится в ЛК. Используйте прежний пароль или восстановление на nsuhw.</p></article>}
+    {loaded && !login && <><NsuhwLoginNamesEditor onPrepared={() => setHasPrepared(true)} /><NsuhwSecretPanel /></>}
+    {loaded && !login && !hasPrepared && <form method="post" className="space-y-3" onSubmit={event => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      void action(async () => { await api({ login: form.get("login") }); await load(); setMessage("Старый логин сохранён и готов для загрузки результатов."); });
+    }}><label className="block">Старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} autoComplete="off" /></label><Button disabled={!hydrated || busy}>Сохранить старый логин</Button></form>}
+    {message && <p role="status">{message}</p>}
   </section>;
 }

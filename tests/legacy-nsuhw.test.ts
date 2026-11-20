@@ -6,8 +6,9 @@ import { randomUUID } from "node:crypto";
 import { readdir,readFile } from "node:fs/promises";
 import { before,after,test } from "node:test";
 import assert from "node:assert/strict";
+import { AccessDenied } from "../src/lib/access";
 import { hashPassword } from "better-auth/crypto";
-import { submitLegacyNsuhw,approveLegacyNsuhw,legacyNsuhwReviewList,legacyNsuhwView,assertNoLegacyNsuhwClaim,submitLegacyNsuhwInTransaction } from "../src/lib/legacy-nsuhw";
+import { submitLegacyNsuhw,legacyNsuhwView,assertNoLegacyNsuhwClaim,submitLegacyNsuhwInTransaction } from "../src/lib/legacy-nsuhw";
 process.env.DEMO_REGISTRATION="true";
 const schema=`legacy_${randomUUID().replaceAll("-","")}`,connection=process.env.DATABASE_URL!;
 const sql=new Client({connectionString:connection});
@@ -30,58 +31,39 @@ before(async()=>{
  }
 });
 after(async()=>{await db.$disconnect();await sql.query('SET search_path TO public');await sql.query(`DROP SCHEMA "${schema}" CASCADE`);await sql.end();});
-test("student declaration is private, repeatable, not ownership proof and blocks replacement generation",async()=>{
+test("student saves old login immediately without organizer approval; retries and own-only access are enforced", async () => {
  await assertNoLegacyNsuhwClaim(db,student);
- const input={login:"legacy.synthetic",confirmed:true};
+ const input={login:"legacy.synthetic"};
  const [a,b]=await Promise.all([submitLegacyNsuhw(db,student,input),submitLegacyNsuhw(db,student,input)]);
- assert.equal(a.id,b.id);assert.equal(a.approvedAt,null);
+ assert.equal(a.id,b.id);assert.equal(a.login,input.login);assert.ok(!("approvedAt" in a));
  await assert.rejects(assertNoLegacyNsuhwClaim(db,student));
  assert.equal(await legacyNsuhwView(db,second),null);
  await assert.rejects(submitLegacyNsuhw(db,student,{...input,userId:second}));
  await assert.rejects(submitLegacyNsuhw(db,student,{...input,login:"different"}));
- await assert.rejects(submitLegacyNsuhw(db,student,{...input,confirmed:false}));
  await assert.rejects(submitLegacyNsuhw(db,chief,input));
- assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_CLAIM_SUBMITTED",objectId:a.id}}),1);
+ await assert.rejects(submitLegacyNsuhw(db,second,{login:""}));
+ assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_LOGIN_SAVED",objectId:a.id}}),1);
 });
-test("chief confirms after external verification, retries are idempotent and link survives another annual participation",async()=>{
- await db.rateLimit.deleteMany();const claim=await legacyNsuhwView(db,student);assert.ok(claim);
- const input={editionId:edition,claimId:claim.id,revision:claim.revision,ownershipChecked:true,confirmed:true,password};
- await assert.rejects(approveLegacyNsuhw(db,chief,{...input,ownershipChecked:false}));
- await assert.rejects(approveLegacyNsuhw(db,chief,{...input,confirmed:false}));
- await assert.rejects(approveLegacyNsuhw(db,chief,{...input,revision:99}));
- const results=await Promise.all([approveLegacyNsuhw(db,chief,input),approveLegacyNsuhw(db,chief,input)]);
- assert.equal(results[0].id,results[1].id);assert.ok(results[0].approvedAt);
- await assert.rejects(assertNoLegacyNsuhwClaim(db,student));
+test("self-reported login survives annual participation without moderation or external password", async () => {
+ const claim=await legacyNsuhwView(db,student);assert.ok(claim);
  const p=await db.participation.findUniqueOrThrow({where:{userId_editionId:{userId:student,editionId:edition}}});
  const {id: _id,createdAt: _time,...data}=p;void _id;void _time;
  await db.participation.create({data:{...data,editionId:foreign}});
  assert.equal((await legacyNsuhwView(db,student))?.id,claim.id);
- assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_LINK_CONFIRMED",objectId:claim.id}}),1);
+ assert.equal(await db.auditEvent.count({where:{action:"NSUHW_LEGACY_LINK_CONFIRMED",objectId:claim.id}}),0);
 });
-test("duplicate pending logins reveal no link, but one external login cannot be approved for two users",async()=>{
- await db.rateLimit.deleteMany();const claim=await submitLegacyNsuhw(db,second,{login:"legacy.synthetic",confirmed:true});
- assert.equal(claim.approvedAt,null);
- await assert.rejects(approveLegacyNsuhw(db,chief,{editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password}));
- assert.equal((await legacyNsuhwView(db,second))?.approvedAt,null);
-});
-test("year scope, role, email, verified email, password and revocation protect moderation; audit contains no login",async()=>{
- await db.rateLimit.deleteMany();const claim=await legacyNsuhwView(db,second);assert.ok(claim);
- const input={editionId:edition,claimId:claim.id,revision:0,ownershipChecked:true,confirmed:true,password};
- await assert.rejects(legacyNsuhwReviewList(db,student,{editionId:edition}));
- await assert.rejects(legacyNsuhwReviewList(db,chief,{editionId:foreign}));
- await assert.rejects(approveLegacyNsuhw(db,student,input));
- await assert.rejects(approveLegacyNsuhw(db,chief,{...input,password:"wrong"}));
- await db.user.update({where:{id:chief},data:{emailVerified:false}});
- await assert.rejects(approveLegacyNsuhw(db,chief,input));
- await db.user.update({where:{id:chief},data:{emailVerified:true}});
- await db.user.update({where:{id:second},data:{emailVerified:false}});
- assert.ok(!(await legacyNsuhwReviewList(db,chief,{editionId:edition})).some(x=>x.id===claim.id));
- await assert.rejects(approveLegacyNsuhw(db,chief,input));
- await db.user.update({where:{id:second},data:{emailVerified:true}});
- await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief,editionId:edition}},data:{revokedAt:new Date()}});
- await assert.rejects(approveLegacyNsuhw(db,chief,input));
+test("duplicate self-reported logins do not silently replace another student's record", async () => {
+ const claim=await submitLegacyNsuhw(db,second,{login:"legacy.synthetic"});
+ assert.notEqual(claim.id,(await legacyNsuhwView(db,student))!.id);
+ assert.equal((await legacyNsuhwView(db,second))?.login,"legacy.synthetic");
+ assert.equal(await db.legacyNsuhwClaim.count({where:{login:"legacy.synthetic"}}),2);
  assert.ok(!JSON.stringify(await db.auditEvent.findMany()).includes("legacy.synthetic"));
- await db.editionStaffGrant.update({where:{userId_editionId:{userId:chief,editionId:edition}},data:{revokedAt:null}});
+ await db.user.update({where:{id:second},data:{emailVerified:false}});
+ await assert.rejects(submitLegacyNsuhw(db,second,{login:"other"}),AccessDenied);
+ await db.user.update({where:{id:second},data:{emailVerified:true}});
+ process.env.DEMO_REGISTRATION="false";
+ try { await assert.rejects(submitLegacyNsuhw(db,second,{login:"legacy.synthetic"})); }
+ finally { process.env.DEMO_REGISTRATION="true"; }
 });
 test("signup declaration rolls back with account transaction and does not require an email proof prematurely",async()=>{
  const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебная регистрация"}});
@@ -112,7 +94,7 @@ test("Latin login names are separate from identity and participation snapshots; 
  assert.equal((await db.user.findUniqueOrThrow({where:{id:user.id}})).name,user.name);
  await assert.rejects(saveNsuhwLoginNames(db,user.id,{...input,userId:second}));
  await assert.rejects(saveNsuhwLoginNames(db,chief,input));
- await submitLegacyNsuhw(db,user.id,{login:"legacy.not.renamed",confirmed:true});
+ await submitLegacyNsuhw(db,user.id,{login:"legacy.not.renamed"});
  await assert.rejects(saveNsuhwLoginNames(db,user.id,{firstNameLatin:"Other",lastNameLatin:"Person",revision:1}));
  assert.equal((await legacyNsuhwView(db,user.id))?.login,"legacy.not.renamed");
  assert.ok(!JSON.stringify(await db.auditEvent.findMany({where:{action:"NSUHW_LOGIN_NAMES_UPDATED"}})).includes("Petrov"));

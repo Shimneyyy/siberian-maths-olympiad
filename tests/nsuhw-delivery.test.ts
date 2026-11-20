@@ -11,7 +11,7 @@ import { DemoLocalKeyProtector } from "../src/lib/external-secrets/local-keys";
 import { openExternalPassword } from "../src/lib/external-secrets/envelope";
 import { externalSecretContext } from "../src/lib/external-secrets/storage";
 import { prepareNsuhwInTransaction } from "../src/lib/prepare-nsuhw";
-import { submitLegacyNsuhw,approveLegacyNsuhw } from "../src/lib/legacy-nsuhw";
+import { submitLegacyNsuhw } from "../src/lib/legacy-nsuhw";
 import { nsuhwExportView,downloadNsuhwExport,confirmNsuhwExport } from "../src/lib/nsuhw-export";
 process.env.DEMO_REGISTRATION="true";
 const schema=`delivery_${randomUUID().replaceAll("-","")}`,connection=process.env.DATABASE_URL!,sql=new Client({connectionString:connection});
@@ -31,7 +31,7 @@ async function fixture(){
   await db.account.create({data:{userId:user.id,accountId:user.id,providerId:"credential",password:hash}});
   const consent=await db.consentRecord.create({data:{userId:user.id,purpose:"synthetic-demo-only",textVersion:"demo",textHash:"a".repeat(64)}});
   const p=await db.participation.create({data:{userId:user.id,editionId:i===3?foreign.id:edition.id,format:"REMOTE",remoteZone:"NSK",status:i===2?"CANCELLED":"REGISTERED",fullName:user.name,universityId:uni.id,universityName:uni.name,universityAbbreviation:uni.abbreviation,courseId:course.id,courseLabel:course.label,consentId:consent.id}});
-  if(i===4){await submitLegacyNsuhw(db,user.id,{login:`legacy.${randomUUID()}`,confirmed:true});participants.push({user,p,account:null});}
+  if(i===4){await submitLegacyNsuhw(db,user.id,{login:`legacy.${randomUUID()}`});participants.push({user,p,account:null});}
   else{await db.nsuhwLoginName.create({data:{userId:user.id,firstNameLatin:"Synthetic",lastNameLatin:["Alpha","Beta","Gamma","Delta"][i]}});const account=await db.$transaction(tx=>prepareNsuhwInTransaction(tx,user.id,keys));participants.push({user,p,account});}
  }
  const scope={editionId:edition.id};
@@ -44,9 +44,8 @@ test("E05 CSV has exact columns/passwords/snapshot FIO, no unrelated/cancelled/l
  const exported=await f.download();assert.ok(exported.csv.startsWith('\uFEFF"Логин","пароль","ФИО"\r\n'));assert.ok(exported.csv.includes('Синтетический, ""Иван""'));
  for(const p of f.participants.slice(0,2)){const account=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:p.user.id}});const secret=await openExternalPassword(account.secretEnvelope,externalSecretContext(account),keys);assert.ok(exported.csv.includes(secret));assert.ok(!JSON.stringify(await db.nsuhwExportBatch.findUniqueOrThrow({where:{id:exported.id}})).includes(secret));assert.ok(!JSON.stringify(await db.auditEvent.findMany()).includes(secret));assert.equal(account.confirmedAt,null);}
  for(const p of f.participants.slice(2,4))assert.ok(!exported.csv.includes(p.account!.login));
- const old=f.participants[4];const claim=await db.legacyNsuhwClaim.findUniqueOrThrow({where:{userId:old.user.id}});assert.equal((await f.view()).pendingLegacyCount,1);
- await approveLegacyNsuhw(db,f.chief.id,{...f.scope,claimId:claim.id,revision:0,password,confirmed:true,ownershipChecked:true});
- assert.equal((await f.view()).existingParticipants[0].login,claim.login);assert.equal((await f.view()).pendingLegacyCount,0);
+ const old=f.participants[4];const claim=await db.legacyNsuhwClaim.findUniqueOrThrow({where:{userId:old.user.id}});
+ assert.equal((await f.view()).existingParticipants[0].login,claim.login);
  assert.ok(!exported.csv.includes(password));assert.equal(await db.outboxEvent.count({where:{editionId:f.edition.id}}),0);
 });
 test("E05 stale preview, unsafe spreadsheet cell and key outage never return a partial file or batch",async()=>{
@@ -69,7 +68,7 @@ test("E05 confirmation activates only exported accounts, preserves cancellation 
  assert.equal((await db.participation.findUniqueOrThrow({where:{id:f.participants[0].p.id}})).status,"CANCELLED");
  assert.equal(await db.outboxEvent.count({where:{editionId:f.edition.id,kind:"EXTERNAL_ACCOUNT_READY"}}),2);
  assert.equal((await f.view()).count,0);
- assert.equal((await f.view()).existingParticipants.length,1);
+ assert.equal((await f.view()).existingParticipants.length,2, "Generated ready account and self-reported old login are both listed");
  await assert.rejects(db.nsuhwExportBatch.update({where:{id:exported.id},data:{items:[]}}));
 });
 test("E05 incorrect versions and outbox failure roll the entire creation confirmation back",async()=>{

@@ -64,11 +64,24 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     await captainPage.getByLabel("ФИО тренера").fill("Учебный тренер браузер");
     await captainPage.getByRole("button", { name: "Создать команду" }).click();
     await captainPage.getByRole("heading", { name: "УВ-1", exact: true }).waitFor();
+    const recipientPage = await recipientContext.newPage();
+    await recipientPage.goto(`${base}/cabinet/teams`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await recipientPage.getByLabel("ФИО тренера").fill("Учебный тренер второй команды");
+    await recipientPage.getByRole("button", { name: "Создать команду", exact: true }).click();
+    await recipientPage.getByRole("heading", { name: "УВ-2", exact: true }).waitFor();
     await captainPage.getByLabel("Пригласить по точному email").fill(recipient.email);
     const [sent] = await Promise.all([captainPage.waitForResponse(r => new URL(r.url()).pathname === "/api/teams/action"), captainPage.getByRole("button", { name: "Пригласить в ЛК" }).click()]);
     assert.equal(sent.status(), 200);
-    const recipientPage = await recipientContext.newPage();
-    await recipientPage.goto(`${base}/cabinet/teams`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await recipientPage.getByRole("button", { name: "Обновить команды и приглашения", exact: true }).click();
+    await recipientPage.getByText(/Приглашение в УВ-1/).waitFor();
+    assert.equal(await recipientPage.getByRole("button", { name: "Принять приглашение", exact: true }).isDisabled(), true);
+    await recipientPage.getByLabel("Подтверждаю удаление команды", { exact: true }).check();
+    const [deletedTeam] = await Promise.all([
+      recipientPage.waitForResponse(r => new URL(r.url()).pathname === "/api/teams/action"),
+      recipientPage.getByRole("button", { name: "Удалить команду", exact: true }).click(),
+    ]);
+    assert.equal(deletedTeam.status(), 200);
+    assert.equal((await db.participation.findUniqueOrThrow({ where: { id: recipientParticipation.id } })).status, "REGISTERED");
     await recipientPage.getByRole("button", { name: "Принять приглашение" }).click();
     await recipientPage.getByRole("heading", { name: "УВ-1", exact: true }).waitFor();
     assert.equal(await db.teamMember.count({ where: { editionId } }), 2);

@@ -12,6 +12,7 @@ const schema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("declineInvitation"), editionId, invitationId: z.uuid(), revision }).strict(),
   z.object({ operation: z.literal("revokeInvitation"), editionId, teamId, invitationId: z.uuid(), revision }).strict(),
   z.object({ operation: z.literal("leave"), editionId, teamId }).strict(),
+  z.object({ operation: z.literal("delete"), editionId, teamId, confirmed: z.literal(true) }).strict(),
   z.object({ operation: z.literal("exclude"), editionId, teamId, participationId }).strict(),
   z.object({ operation: z.literal("requestCaptain"), editionId, teamId, participationId }).strict(),
   z.object({ operation: z.literal("acceptCaptain"), editionId, teamId, revision }).strict(),
@@ -53,9 +54,14 @@ export async function teamAction(db: PrismaClient, actorId: string, raw: unknown
     if (input.operation === "invite") {
       requireCaptain();
       // Exact address only. Do not expose another university/year's account or a user catalog.
-      const target = await tx.participation.findFirst({ where: { editionId: p.editionId, universityId: p.universityId, status: "REGISTERED", user: { email: input.email, emailVerified: true, role: "STUDENT" }, teamMembership: null } });
+      const target = await tx.participation.findFirst({ where: { editionId: p.editionId, universityId: p.universityId, status: "REGISTERED", user: { email: input.email, emailVerified: true, role: "STUDENT" }, id: { not: p.id }, OR: [{ teamMembership: null }, { teamMembership: { is: { teamId: { not: team.id } } } }] } });
       if (target) await tx.teamInvitation.upsert({ where: { teamId_targetParticipationId: { teamId: team.id, targetParticipationId: target.id } },
         create: { teamId: team.id, editionId: p.editionId, targetParticipationId: target.id }, update: { status: "PENDING", revision: { increment: 1 } } });
+    } else if (input.operation === "delete") {
+      requireCaptain();
+      await tx.team.delete({ where: { id: team.id } });
+      await tx.auditEvent.create({ data: { actorId, action: "TEAM_DELETED", objectType: "Team", objectId: team.id, editionId: p.editionId, outcome: "SUCCESS", details: { memberCount: team.members.length } } });
+      return { status: "ok" };
     } else if (input.operation === "revokeInvitation") {
       requireCaptain();
       const invite = await tx.teamInvitation.findFirst({ where: { id: input.invitationId, teamId: team.id, revision: input.revision, status: "PENDING" } });

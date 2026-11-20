@@ -73,3 +73,27 @@ test("removing TOTP preserves enrolled accounts, credentials, sessions and year 
     assert.equal((await db.query("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema=$1 AND table_name='User' AND column_name='twoFactorEnabled'", [schema])).rows[0].n, 0);
   } finally { await db.query('SET search_path TO public'); await db.query(`DROP SCHEMA "${schema}" CASCADE`); await db.end(); }
 });
+
+test("self-reported login migration preserves both pending and approved old logins and removes moderation columns", async () => {
+  const db = new Client({ connectionString: process.env.DATABASE_URL });
+  const schema = `self_reported_${randomUUID().replaceAll("-", "")}`;
+  await db.connect();
+  try {
+    await db.query(`CREATE SCHEMA "${schema}"`); await db.query(`SET search_path TO "${schema}"`);
+    const migrations = (await readdir("prisma/migrations")).filter(x => /^\d/.test(x)).sort();
+    const change = "20261120090000_self_reported_nsuhw_login";
+    for (const m of migrations.filter(x => x < change)) await db.query(await readFile(`prisma/migrations/${m}/migration.sql`, "utf8"));
+    const [chief, first, second, third, edition] = Array.from({length: 5}, () => randomUUID());
+    for (const user of [chief, first, second, third]) await db.query('INSERT INTO "User" (id,email,name,"updatedAt") VALUES ($1,$2,$3,now())', [user, `${user}@example.test`, "Учебный владелец"]);
+    await db.query('INSERT INTO "OlympiadEdition" (id,year,title) VALUES ($1,2027,$2)', [edition,"Учебный выпуск"]);
+    await db.query('INSERT INTO "LegacyNsuhwClaim" (id,"userId",login) VALUES ($1,$2,$3)', [randomUUID(),first,"legacy.same"]);
+    await db.query('INSERT INTO "LegacyNsuhwClaim" (id,"userId",login,"approvedAt","approvedById","approvedEditionId") VALUES ($1,$2,$3,now(),$4,$5)', [randomUUID(),second,"legacy.same",chief,edition]);
+    const before = (await db.query('SELECT id,"userId",login,revision,"createdAt" FROM "LegacyNsuhwClaim" ORDER BY id')).rows;
+    await db.query(await readFile(`prisma/migrations/${change}/migration.sql`, "utf8"));
+    assert.deepEqual((await db.query('SELECT * FROM "LegacyNsuhwClaim" ORDER BY id')).rows,before);
+    const columns = (await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name='LegacyNsuhwClaim'",[schema])).rows.map(x=>x.column_name);
+    assert.ok(!columns.includes("approvedAt")); assert.ok(!columns.includes("approvedById")); assert.ok(!columns.includes("approvedEditionId"));
+    await db.query('INSERT INTO "LegacyNsuhwClaim" (id,"userId",login) VALUES ($1,$2,$3)', [randomUUID(),third,"legacy.same"]);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM "LegacyNsuhwClaim"')).rows[0].n,3);
+  } finally { await db.query('SET search_path TO public'); await db.query(`DROP SCHEMA "${schema}" CASCADE`); await db.end(); }
+});

@@ -28,13 +28,13 @@ async function inspect(tx: Prisma.TransactionClient, input: z.infer<typeof input
   // spelling is deliberate: legacy case normalization has not been agreed.
   const participants = await tx.participation.findMany({ where: { editionId: input.editionId, user: { role: "STUDENT", emailVerified: true, OR: [
     { preparedExternalAccount: { is: { login: { in: logins }, confirmedAt: { not: null } } } },
-    { legacyNsuhwClaim: { is: { login: { in: logins }, approvedAt: { not: null } } } },
-  ] } }, select: { id: true, revision: true, user: { select: { email: true, preparedExternalAccount: { select: { login: true, confirmedAt: true } }, legacyNsuhwClaim: { select: { login: true, approvedAt: true } } } }, individualResults: { where: { kind: input.kind }, select: { id: true } } } });
+    { legacyNsuhwClaim: { is: { login: { in: logins } } } },
+  ] } }, select: { id: true, revision: true, user: { select: { email: true, preparedExternalAccount: { select: { login: true, confirmedAt: true } }, legacyNsuhwClaim: { select: { login: true } } } }, individualResults: { where: { kind: input.kind }, select: { id: true } } } });
   const byLogin = new Map<string, typeof participants>();
   for (const p of participants) {
     // Synthetic-only boundary also protects imports into a contaminated demo DB.
     if (!p.user.email.endsWith("@example.test")) continue;
-    const logins = new Set([...(p.user.preparedExternalAccount?.confirmedAt ? [p.user.preparedExternalAccount.login] : []), ...(p.user.legacyNsuhwClaim?.approvedAt ? [p.user.legacyNsuhwClaim.login] : [])]);
+    const logins = new Set([...(p.user.preparedExternalAccount?.confirmedAt ? [p.user.preparedExternalAccount.login] : []), ...(p.user.legacyNsuhwClaim ? [p.user.legacyNsuhwClaim.login] : [])]);
     for (const login of logins) byLogin.set(login, [...(byLogin.get(login) ?? []), p]);
   }
   const counts = new Map<string, number>(), owners = new Map<string, number>();
@@ -52,7 +52,7 @@ async function inspect(tx: Prisma.TransactionClient, input: z.infer<typeof input
   return { taskCount: parsed.taskCount, rows, selectionHash, validCount: rows.filter(r => !r.error).length, rejectedCount: rows.filter(r => !!r.error).length };
 }
 function view(value: Awaited<ReturnType<typeof inspect>>) {
-  return { ...value, rows: value.rows.map(({ line, login, scores, total, prize, error }) => ({ line, login, scores, total, prize, error })) };
+  return { ...value, rows: value.rows.map(({ line, login, fullName, course, university, scores, total, prize, error }) => ({ line, login, fullName, course, university, scores, total, prize, error })) };
 }
 export async function previewResultImport(db: PrismaClient, actorId: string, raw: unknown) {
   const input = inputSchema.parse(raw);

@@ -25,7 +25,6 @@ model User {
   preparedExternalAccount PreparedExternalAccount? @relation("PreparedOwner")
   nsuhwLoginName NsuhwLoginName?
   legacyNsuhwClaim LegacyNsuhwClaim? @relation("LegacyClaimOwner")
-  legacyNsuhwApprovals LegacyNsuhwClaim[] @relation("LegacyClaimReviewer")
   mailBatches MailBatch[]
   announcements Announcement[]
   notificationEvents OutboxEvent[]
@@ -104,7 +103,6 @@ model OlympiadEdition {
   individualResults IndividualResult[]
   nsuhwExports NsuhwExportBatch[]
   nsuhwAccountsConfirmed PreparedExternalAccount[]
-  legacyNsuhwApprovals LegacyNsuhwClaim[]
   mailBatches MailBatch[]
   announcements Announcement[]
   notificationEvents OutboxEvent[]
@@ -480,13 +478,8 @@ model LegacyNsuhwClaim {
   login String @db.VarChar(254)
   revision Int @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
-  approvedAt DateTime? @db.Timestamptz(3)
-  approvedById String? @db.Uuid
-  approvedEditionId String? @db.Uuid
   user User @relation("LegacyClaimOwner", fields: [userId], references: [id], onDelete: Restrict)
-  approvedBy User? @relation("LegacyClaimReviewer", fields: [approvedById], references: [id], onDelete: Restrict)
-  approvedEdition OlympiadEdition? @relation(fields: [approvedEditionId], references: [id], onDelete: Restrict)
-  @@index([approvedAt, createdAt])
+  @@index([login])
 }
 
 model NsuhwLoginName {

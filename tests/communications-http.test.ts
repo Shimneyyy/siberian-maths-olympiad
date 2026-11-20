@@ -117,31 +117,18 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
 
     await db.rateLimit.deleteMany();
     await viewed.goto(`${base}/cabinet/nsuhw`);
-    await viewed.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await viewed.getByRole("button",{name:"Показать мой аккаунт nsuhw",exact:true}).click();
     await viewed.getByLabel("Старый логин nsuhw",{exact:true}).fill("legacy.browser.synthetic");
-    await viewed.getByLabel("Прошу проверить",{exact:false}).check();
-    await viewed.getByRole("button",{name:"Отправить на проверку",exact:true}).click();
-    await viewed.getByRole("status").filter({hasText:"Заявка ожидает"}).waitFor();
+    await viewed.getByRole("button",{name:"Сохранить старый логин",exact:true}).click();
+    await viewed.getByRole("status").filter({hasText:"Старый логин сохранён"}).waitFor();
     const legacy = await db.legacyNsuhwClaim.findUniqueOrThrow({where:{userId:reader.id}});
-    assert.equal(legacy.approvedAt,null);
-    const approve = {editionId:edition.id,claimId:legacy.id,revision:0,password,confirmed:true,ownershipChecked:true};
-    assert.equal((await post(recipient,"nsuhw/legacy/approve",approve)).status(),403);
-    assert.equal((await post(writer,"nsuhw/legacy/approve",{...approve,ownershipChecked:false})).status(),400);
-    assert.equal((await post(writer,"nsuhw/legacy/approve",{...approve,editionId:other.id})).status(),403);
-    assert.equal((await post(writer,"nsuhw/legacy/approve",approve,"https://untrusted.invalid")).status(),403);
-    await page.goto(`${base}/cabinet/nsuhw`);
-    await page.getByRole("button",{name:"Показать заявки",exact:true}).click();
-    await page.getByText("Логин nsuhw: legacy.browser.synthetic",{exact:true}).waitFor();
-    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
-    await page.getByLabel("Сверил принадлежность",{exact:false}).check();
-    await page.getByLabel("Подтверждаю привязку",{exact:false}).check();
-    await page.getByRole("button",{name:"Подтвердить привязку",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Привязка подтверждена"}).waitFor();
-    await viewed.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
-    await viewed.getByText("Привязка подтверждена главным организатором",{exact:true}).waitFor();
+    assert.equal(legacy.login,"legacy.browser.synthetic");
+    for (const path of ["nsuhw/legacy/approve", "nsuhw/legacy/review"]) {
+      assert.equal((await post(writer,path,{})).status(),404);
+    }
     const ownClaim = await recipient.request.get(`${base}/api/nsuhw/legacy`);
     assert.ok(ownClaim.headers()["cache-control"].includes("no-store"));
-    assert.ok(!JSON.stringify(await ownClaim.json()).includes("approvedById"));
+    assert.deepEqual(await ownClaim.json(), {id:legacy.id,login:legacy.login,revision:legacy.revision});
     assert.equal(await db.legacyNsuhwClaim.count(),1);
     assert.equal(errors.length,0);
     await db.rateLimit.deleteMany();
@@ -173,7 +160,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal((await post(registering,"auth/email-otp/verify-email",{email:newEmail,otp:signupCode})).status(),200);
     assert.equal((await post(registering,"auth/sign-in/email",{email:newEmail,password})).status(),200);
     await registrationPage.goto(`${base}/cabinet/nsuhw`);
-    await registrationPage.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await registrationPage.getByRole("button",{name:"Показать мой аккаунт nsuhw",exact:true}).click();
     await registrationPage.getByRole("button",{name:"Загрузить данные для нового логина",exact:true}).click();
     const reserved=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:created.id}});
     await registrationPage.getByText(`Логин подготовлен: ${reserved.login}`,{exact:true}).waitFor();
@@ -184,7 +171,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     const existingContext=await browser.newContext();assert.equal((await post(existingContext,"auth/sign-in/email",{email:transferred.email,password})).status(),200);
     const existingPage=await existingContext.newPage();existingPage.on("pageerror",e=>errors.push(e.message));
     await existingPage.goto(`${base}/cabinet/nsuhw`);
-    await existingPage.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await existingPage.getByRole("button",{name:"Показать мой аккаунт nsuhw",exact:true}).click();
     await existingPage.getByRole("button",{name:"Загрузить данные для нового логина",exact:true}).click();
     await existingPage.getByLabel("Имя латиницей для логина",{exact:true}).fill("Elena");
     await existingPage.getByLabel("Фамилия латиницей для логина",{exact:true}).fill("Existing");
@@ -233,7 +220,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal((await post(existingContext,"nsuhw/secret",{password,confirmed:true,userId:created.id})).status(),400);
     assert.equal((await existingContext.request.get(`${base}/api/nsuhw/secret`)).status(),405);
     await existingPage.bringToFront();await existingPage.goto(`${base}/cabinet/nsuhw`);
-    await existingPage.getByRole("button",{name:"Проверить мою заявку",exact:true}).click();
+    await existingPage.getByRole("button",{name:"Показать мой аккаунт nsuhw",exact:true}).click();
     await existingPage.getByRole("button",{name:"Проверить готовность аккаунта nsuhw",exact:true}).click();
     await existingPage.getByLabel("Текущий пароль ЛК для показа nsuhw",{exact:true}).fill("wrong");
     await existingPage.getByLabel("Подтверждаю показ моего пароля nsuhw",{exact:true}).check();
@@ -275,7 +262,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal(errors.length,0);
     // E07: real CSV file selection, preview and partial import; never publish.
     await db.rateLimit.deleteMany();
-    const resultCsv = `Логин,Задача 1,Задача 2,Сумма,Приз\r\n${accountBefore.login},0,,17,"Приз, учебный"\r\nunknown.synthetic,2,3,5,\r\n`;
+    const resultCsv = `ФИО,Курс,Вуз,Логин,Задача 1,Задача 2,Сумма баллов,Приз\r\n${transferred.name},2,Учебный вуз,${accountBefore.login},0,,17,"Приз, учебный"\r\nНеизвестный участник,2,Учебный вуз,unknown.synthetic,2,3,5,\r\n`;
     const resultInput = { editionId: edition.id, kind: "PRELIMINARY", csv: resultCsv };
     assert.equal((await post(recipient,"results/import/preview",resultInput)).status(),403);
     assert.equal((await post(writer,"results/import/preview",resultInput,"https://untrusted.invalid")).status(),403);

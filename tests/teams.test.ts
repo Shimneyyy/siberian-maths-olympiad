@@ -236,3 +236,49 @@ test("manual closure blocks student cancellation; assigned chief needs verified 
   const reasonId = (audit.details as { correctionId: string }).correctionId;
   assert.equal((await db.participationCorrection.findUniqueOrThrow({ where: { id: reasonId } })).reason, chief.reason);
 });
+
+test("captain can receive another team's invitation, dissolve own team and join without cancelling participation", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const own = await createTeam(db, f.users[0].id, input());
+  const other = await createTeam(db, f.users[2].id, input());
+  const act = (actor: number, command: Record<string, unknown>) => teamAction(db, f.users[actor].id, { editionId: f.edition.id, ...command });
+  await act(0, { operation: "invite", teamId: own.id, email: f.users[1].email });
+  const teammateInvite = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await act(1, { operation: "acceptInvitation", invitationId: teammateInvite.id, revision: teammateInvite.revision });
+  await act(0, { operation: "requestCaptain", teamId: own.id, participationId: f.participations[1].id });
+  await act(2, { operation: "invite", teamId: other.id, email: f.users[0].email });
+  const incoming = (await teamsView(db, f.users[0].id))[0].invitations[0];
+  assert.equal(incoming.teamName, "УВ-2", "A captain must receive incoming invitations");
+  await assert.rejects(act(0, { operation: "acceptInvitation", invitationId: incoming.id, revision: incoming.revision }), /уже состоите/);
+  await assert.rejects(act(1, { operation: "delete", teamId: own.id, confirmed: true }), AccessDenied);
+  await assert.rejects(act(0, { operation: "delete", teamId: own.id, confirmed: false }));
+  const snapshots = await db.participation.findMany({ where: { id: { in: f.participations.slice(0, 3).map(p => p.id) } }, orderBy: { id: "asc" } });
+  await act(0, { operation: "delete", teamId: own.id, confirmed: true });
+  assert.equal(await db.team.count({ where: { id: own.id } }), 0);
+  assert.equal(await db.teamMember.count({ where: { teamId: own.id } }), 0);
+  assert.equal(await db.teamInvitation.count({ where: { teamId: own.id } }), 0);
+  assert.equal(await db.captainTransfer.count({ where: { teamId: own.id } }), 0);
+  assert.deepEqual(await db.participation.findMany({ where: { id: { in: snapshots.map(p => p.id) } }, orderBy: { id: "asc" } }), snapshots);
+  await act(0, { operation: "acceptInvitation", invitationId: incoming.id, revision: incoming.revision });
+  assert.equal((await teamsView(db, f.users[0].id))[0].team?.id, other.id);
+  assert.equal(await db.auditEvent.count({ where: { action: "TEAM_DELETED", objectId: own.id } }), 1);
+});
+
+test("team deletion respects current captain, year closure and serializes against acceptance", async () => {
+  const { teamAction } = await import("../src/lib/team-actions");
+  const own = await createTeam(db, f.users[0].id, input());
+  const command = { editionId: f.edition.id, teamId: own.id, operation: "delete", confirmed: true };
+  await assert.rejects(teamAction(db, f.users[8].id, command), AccessDenied);
+  await db.olympiadEdition.update({ where: { id: f.edition.id }, data: { registrationManuallyClosed: true } });
+  await assert.rejects(teamAction(db, f.users[0].id, command), AccessDenied);
+  await db.olympiadEdition.update({ where: { id: f.edition.id }, data: { registrationManuallyClosed: false } });
+  await teamAction(db, f.users[0].id, { editionId: f.edition.id, teamId: own.id, operation: "invite", email: f.users[1].email });
+  const invite = (await teamsView(db, f.users[1].id))[0].invitations[0];
+  await Promise.allSettled([
+    teamAction(db, f.users[0].id, command),
+    teamAction(db, f.users[1].id, { editionId: f.edition.id, operation: "acceptInvitation", invitationId: invite.id, revision: invite.revision }),
+  ]);
+  assert.equal(await db.team.count({ where: { id: own.id } }), 0);
+  assert.equal(await db.teamMember.count({ where: { teamId: own.id } }), 0);
+  assert.equal((await db.participation.findUniqueOrThrow({ where: { id: f.participations[1].id } })).status, "REGISTERED");
+});

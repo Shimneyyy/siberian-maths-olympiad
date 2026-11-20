@@ -26,11 +26,10 @@ export async function nsuhwExportView(db:PrismaClient,actorId:string,raw:unknown
  const {editionId}=scopeSchema.parse(raw);
  return db.$transaction(async tx=>{
   await authorizeStaff(tx,actorId,"notifications:send",editionId);const {rows,selectionHash}=await candidates(tx,editionId);
-  const existing=await tx.participation.findMany({where:{editionId,status:"REGISTERED",user:{role:"STUDENT",emailVerified:true,OR:[{preparedExternalAccount:{is:{confirmedAt:{not:null}}}},{legacyNsuhwClaim:{is:{approvedAt:{not:null}}}}]}},select:{id:true,fullName:true,user:{select:{preparedExternalAccount:{select:{login:true,confirmedAt:true}},legacyNsuhwClaim:{select:{login:true}}}}},orderBy:{id:"asc"},take:10001});
+  const existing=await tx.participation.findMany({where:{editionId,status:"REGISTERED",user:{role:"STUDENT",emailVerified:true,OR:[{preparedExternalAccount:{is:{confirmedAt:{not:null}}}},{legacyNsuhwClaim:{isNot:null}}]}},select:{id:true,fullName:true,user:{select:{preparedExternalAccount:{select:{login:true,confirmedAt:true}},legacyNsuhwClaim:{select:{login:true}}}}},orderBy:{id:"asc"},take:10001});
   if(existing.length>10000)throw new OlympiadError("CONFLICT","Список ограничен 10000 аккаунтами");
-  const pendingLegacyCount=await tx.participation.count({where:{editionId,status:"REGISTERED",user:{role:"STUDENT",emailVerified:true,legacyNsuhwClaim:{is:{approvedAt:null}}}}});
   const batches=await tx.nsuhwExportBatch.findMany({where:{editionId},orderBy:[{createdAt:"desc"},{id:"desc"}],select:{id:true,createdAt:true,confirmedAt:true,items:true}});
-  return {selectionHash,count:rows.length,existingParticipants:existing.map(p=>({id:p.id,fullName:p.fullName,login:p.user.preparedExternalAccount?.confirmedAt?p.user.preparedExternalAccount.login:p.user.legacyNsuhwClaim!.login})),pendingLegacyCount,participants:rows.map(r=>({id:r.id,fullName:r.fullName,login:r.user.preparedExternalAccount!.login})),batches:batches.map(b=>({id:b.id,createdAt:b.createdAt,confirmedAt:b.confirmedAt,count:itemsSchema.parse(b.items).length}))};
+  return {selectionHash,count:rows.length,existingParticipants:existing.map(p=>({id:p.id,fullName:p.fullName,login:p.user.preparedExternalAccount?.confirmedAt?p.user.preparedExternalAccount.login:p.user.legacyNsuhwClaim!.login})),participants:rows.map(r=>({id:r.id,fullName:r.fullName,login:r.user.preparedExternalAccount!.login})),batches:batches.map(b=>({id:b.id,createdAt:b.createdAt,confirmedAt:b.confirmedAt,count:itemsSchema.parse(b.items).length}))};
  },{isolationLevel:"RepeatableRead"});
 }
 export async function downloadNsuhwExport(db:PrismaClient,actorId:string,raw:unknown,protector?:KeyProtector){

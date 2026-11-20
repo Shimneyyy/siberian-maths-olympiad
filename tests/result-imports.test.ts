@@ -30,11 +30,11 @@ async function fixture() {
   const uni = await db.university.create({ data: { name: "Учебный вуз", abbreviation: "УВ" } }), course = await db.courseOption.create({ data: { label: "Учебный курс" } });
   const people = [];
   for (let i = 0; i < 5; i++) {
-    const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: `Синтетический участник ${i}`, emailVerified: true } });
+    const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: `Синтетический участник ${i}`, emailVerified: i !== 4 } });
     const consent = await db.consentRecord.create({ data: { userId: user.id, purpose: "synthetic-demo-only", textVersion: "demo", textHash: "a".repeat(64) } });
     const p = await db.participation.create({ data: { userId: user.id, editionId: i === 3 ? foreign.id : edition.id, status: i === 2 ? "CANCELLED" : "REGISTERED", format: "REMOTE", remoteZone: "NSK", fullName: user.name, universityId: uni.id, universityName: uni.name, universityAbbreviation: uni.abbreviation, courseId: course.id, courseLabel: course.label, consentId: consent.id } });
     const login = `Legacy.${randomUUID()}`;
-    await db.legacyNsuhwClaim.create({ data: { userId: user.id, login, ...(i === 4 ? {} : { approvedAt: new Date(), approvedById: chief.id, approvedEditionId: p.editionId }) } });
+    await db.legacyNsuhwClaim.create({ data: { userId: user.id, login } });
     people.push({ user, p, login });
   }
   const csv = (lines: string[]) => "\uFEFFЛогин,Задача 1,Задача 2,Сумма,Приз\r\n" + lines.join("\r\n") + "\r\n";
@@ -49,7 +49,7 @@ test("E07 CSV preserves quoted text, zero/null and rejects malformed framing, un
   for (const value of ["-1", "1.5", "1e2", "2147483648", "=1", "NaN"]) assert.equal(parseResultCsv(`Логин,Задача 1,Сумма,Приз\nx,${value},,`).rows[0].error, "INVALID_SCORE");
   for (const csv of ['Логин,Задача 1,Сумма,Приз\nx,"1,,', 'Логин,Задача 2,Сумма,Приз\nx,1,,', 'x'.repeat(524289), 'Логин,Задача 1,Сумма,Приз\nx,"1"x,,']) assert.throws(() => parseResultCsv(csv));
 });
-test("E07 partial apply matches exact approved logins in year, persists scores and imported sum without publication", async () => {
+test("E07 partial apply matches exact self-reported logins in year, persists scores and imported sum without publication", async () => {
   const f = await fixture(), [a,b,c,foreign,pending] = f.people;
   const lines = [`${a.login},0,,99,"Приз, учебный"`, `${b.login},1.5,2,3,`, `${c.login},3,4,7,`, `${foreign.login},1,2,3,`, `${pending.login},1,2,3,`, `unknown,1,2,3,`];
   const preview = await f.preview(lines); assert.equal(preview.validCount, 2); assert.equal(preview.rejectedCount, 4);
@@ -196,4 +196,36 @@ test("E08 outbox or audit failure rolls publication back without exposing scores
     assert.equal((await resultsView(db,a.user.id,{editionId:f.edition.id})).total,0);
     assert.equal(await db.outboxEvent.count({where:{editionId:f.edition.id}}),0);
   }
+});
+
+test("result CSV accepts customer columns and matches immediately entered old login, then publishes own achievement", async () => {
+  const { submitLegacyNsuhw } = await import("../src/lib/legacy-nsuhw");
+  const { publishResults, resultsView } = await import("../src/lib/results");
+  const { personalHistory } = await import("../src/lib/personal-history");
+  const f = await fixture(), owner = f.people[0];
+  await db.legacyNsuhwClaim.delete({ where: { userId: owner.user.id } });
+  await submitLegacyNsuhw(db, owner.user.id, { login: owner.login });
+  const csv = `ФИО,Курс,Вуз,Логин,Задача 1,Задача 2,Сумма баллов\n${owner.user.name},2,Учебный вуз,${owner.login},5,7,12`;
+  const input = { editionId: f.edition.id, kind: "FINAL", csv };
+  const preview = await previewResultImport(db, f.chief.id, input);
+  assert.equal(preview.validCount, 1); assert.equal(preview.taskCount, 2);
+  assert.equal(preview.rows[0].fullName, owner.user.name); assert.equal(preview.rows[0].course, "2");
+  assert.equal(preview.rows[0].university, "Учебный вуз"); assert.deepEqual(preview.rows[0].scores, [5,7]);
+  const done = await applyResultImport(db, f.chief.id, { ...input, id: randomUUID(), selectionHash: preview.selectionHash, password, confirmed: true });
+  assert.equal((await resultsView(db, owner.user.id, { editionId: f.edition.id })).total, 0);
+  await publishResults(db, f.chief.id, { editionId: f.edition.id, batchId: done.id, password, confirmed: true });
+  assert.equal((await resultsView(db, owner.user.id, { editionId: f.edition.id })).rows[0].total, 12);
+  assert.equal((await personalHistory(db, owner.user.id)).rows[0].total, 12);
+  assert.equal((await resultsView(db, f.people[1].user.id, { editionId: f.edition.id })).total, 0);
+  assert.equal((await db.participation.findUniqueOrThrow({where:{id:owner.p.id}})).courseLabel, owner.p.courseLabel, "CSV metadata must not rewrite the annual snapshot");
+});
+
+test("ambiguous self-reported login never assigns results or silently falls back to FIO", async () => {
+  const f = await fixture(), [a,b] = f.people;
+  await db.legacyNsuhwClaim.update({where:{userId:b.user.id},data:{login:a.login}});
+  const preview = await f.preview([`${a.login},1,2,3,`]);
+  assert.equal(preview.validCount,0); assert.equal(preview.rows[0].error,"PARTICIPANT_UNAVAILABLE");
+  const data = parseResultCsv(`ФИО,Курс,Вуз,Логин,Задача 1,Сумма баллов,Приз\nСинтетическое имя,2,УВ,unknown,0,,Номинация`);
+  assert.equal(data.rows[0].prize,"Номинация"); assert.equal(data.rows[0].total,null);
+  assert.throws(() => parseResultCsv("ФИО,Курс,Вуз,Задача 1,Сумма баллов\nx,2,УВ,1,1"), "Login column is required");
 });

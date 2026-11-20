@@ -10,12 +10,11 @@ export const registrationSchema = z.object({
   password: z.string().min(12).max(128),
   universityId: z.uuid(), courseId: z.uuid(), demoConsent: z.literal(true),
   firstNameLatin: latinLoginPart.optional(), lastNameLatin: latinLoginPart.optional(),
-  legacyNsuhwLogin: legacyNsuhwLogin.optional(), legacyNsuhwClaimConfirmed: z.boolean().optional(),
+  legacyNsuhwLogin: legacyNsuhwLogin.optional(),
 }).superRefine((value,ctx) => {
   if (value.legacyNsuhwLogin) {
     if (value.firstNameLatin !== undefined || value.lastNameLatin !== undefined) ctx.addIssue({code:"custom",message:"Для старого аккаунта новые данные логина не собираются"});
   } else if (!nsuhwLoginNamesSchema.safeParse({firstNameLatin:value.firstNameLatin,lastNameLatin:value.lastNameLatin}).success) ctx.addIssue({code:"custom",message:"Укажите имя и фамилию латиницей для нового логина"});
-  if (!!value.legacyNsuhwLogin !== (value.legacyNsuhwClaimConfirmed === true)) ctx.addIssue({code:"custom",message:"Подтвердите заявку на проверку старого логина nsuhw"});
 });
 export function assertDemoRegistration(email: string) {
   // Legal documents are not approved: no switch for production collection yet.

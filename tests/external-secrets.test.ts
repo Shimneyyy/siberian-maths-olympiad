@@ -73,10 +73,10 @@ test("storage contains only envelope, rejects legacy/duplicates and freezes logi
  assert.equal(await openExternalPassword(row.secretEnvelope,externalSecretContext(row),provider()),password);
  assert.ok(!JSON.stringify(row).includes(password));assert.ok(!JSON.stringify(await db.auditEvent.findMany()).includes(password));
  await assert.rejects(db.$transaction(tx=>storePreparedExternalAccount(tx,other.id,row.login,password,provider())));
- await assert.rejects(submitLegacyNsuhw(db,owner.id,{login:"legacy.new",confirmed:true}));
+ await assert.rejects(submitLegacyNsuhw(db,owner.id,{login:"legacy.new"}));
  await assert.rejects(saveNsuhwLoginNames(db,owner.id,{firstNameLatin:"Other",lastNameLatin:"Person",revision:0}));
  assert.deepEqual(await db.user.findUniqueOrThrow({where:{id:owner.id},include:{accounts:true}}),before);
- await submitLegacyNsuhw(db,other.id,{login:"legacy.reserved",confirmed:true});
+ await submitLegacyNsuhw(db,other.id,{login:"legacy.reserved"});
  await assert.rejects(db.$transaction(tx=>storePreparedExternalAccount(tx,other.id,"smc.s.other",password,provider())));
  const third=await student();await assert.rejects(db.$transaction(tx=>storePreparedExternalAccount(tx,third.id,"legacy.reserved",password,provider())));
  assert.equal(await db.outboxJob.count(),0);
@@ -106,7 +106,7 @@ test("missing keyring cannot be silently replaced while encrypted records exist"
 });
 test("E04 concurrent allocations skip known legacy names and produce independent encrypted passwords",async()=>{
  const {prepareNsuhwInTransaction}=await import("../src/lib/prepare-nsuhw");
- const legacy=await student();await submitLegacyNsuhw(db,legacy.id,{login:"SMC.I.PETROV",confirmed:true});
+ const legacy=await student();await submitLegacyNsuhw(db,legacy.id,{login:"SMC.I.PETROV"});
  const owners=await Promise.all(Array.from({length:5},()=>student()));
  for(const owner of owners)await db.nsuhwLoginName.create({data:{userId:owner.id,firstNameLatin:"Ivan",lastNameLatin:"Petrov"}});
  const records=await Promise.all(owners.map(owner=>db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider()))));
@@ -126,7 +126,7 @@ test("E04 same-owner retries preserve login/password and stale names or legacy d
  assert.deepEqual(await db.preparedExternalAccount.findUniqueOrThrow({where:{id:a.id}}),before);
  assert.ok(!JSON.stringify(await preparedNsuhwView(db,owner.id)).includes("secretEnvelope"));
  await assert.rejects(saveNsuhwLoginNames(db,owner.id,{firstNameLatin:"Other",lastNameLatin:"Name",revision:0}));
- const old=await student();await submitLegacyNsuhw(db,old.id,{login:"legacy.no.regeneration",confirmed:true});
+ const old=await student();await submitLegacyNsuhw(db,old.id,{login:"legacy.no.regeneration"});
  await assert.rejects(db.$transaction(tx=>prepareNsuhwInTransaction(tx,old.id,provider())));
  assert.equal(await db.preparedExternalAccount.count({where:{userId:old.id}}),0);
  assert.equal(await db.auditEvent.count({where:{objectId:a.id,action:"NSUHW_ACCOUNT_PREPARED"}}),1);

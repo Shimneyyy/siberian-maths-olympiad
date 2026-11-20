@@ -14,6 +14,7 @@ export default async function Cabinet() {
   const sections = [
     ...(user.role === "STUDENT" ? [
       ["/cabinet/profile", "Редактировать профиль"],
+      ["/cabinet/nsuhw", "Аккаунт nsuhw"],
       ["/cabinet/teams", "Команды олимпиады"],
       ["/cabinet/olympiad", "Моё участие в олимпиаде"],
     ] : []),
@@ -23,7 +24,6 @@ export default async function Cabinet() {
     ...(user.role === "TECHNICAL_ADMIN" ? [["/cabinet/admin", "Техническое администрирование"]] : []),
     ...(["STUDENT", "CHIEF_ORGANIZER"].includes(user.role ?? "") ? [
       ["/cabinet/announcements", "Объявления"],
-      ["/cabinet/nsuhw", "Аккаунт nsuhw"],
       ["/cabinet/diplomas", "Дипломы"],
     ] : []),
     ...(user.role === "CHIEF_ORGANIZER" ? [

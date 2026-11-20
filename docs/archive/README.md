@@ -18,6 +18,8 @@
 - [Auth и пакеты аудита](investigations/BUGFIX_HISTORY.md).
 - [Реорганизация документации](investigations/DOCUMENTATION_RESTRUCTURE.md).
 
+- [Команды и старые логины: продолжение 20 ноября](investigations/TEAMS_AND_SELF_REPORTED_LOGIN.md).
+
 ## Куда перенесено содержимое
 
 | Прежний документ в a921c09 | Действующее место | Исторический источник |
