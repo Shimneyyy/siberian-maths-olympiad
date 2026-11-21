@@ -43,3 +43,5 @@
 Техническая очередь после e5812d9: [проверки и ограничения](investigations/QUEUE_HARDENING.md).
 
 - [Восстановление форм CSV после отказов и потери ответа](investigations/IMPORT_FORM_RECOVERY.md).
+
+- [Завершение согласованного функционала](investigations/DEVELOPMENT_COMPLETION.md).

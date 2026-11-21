@@ -160,8 +160,15 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     assert.equal((await request(observer, "/api/registrations/search", { editionId })).status(), 403);
     // Back must revalidate server scopes even if the same user remains signed in.
     await page.evaluate(()=>history.pushState({},"",location.href+"#scope-check"));
-    await page.goBack();
-    await page.getByText("У вас нет действующих назначений на годы или площадки олимпиады.",{exact:true}).waitFor();
+    // A focus check completing before the slower Back check cannot cancel server revalidation.
+    let release!:()=>void;const held=new Promise<void>(r=>release=r);let requests=0;
+    await page.route("**/api/me",async route=>{if(++requests===1)await held;await route.continue().catch(()=>{});});
+    try{
+      const first=page.waitForRequest(r=>new URL(r.url()).pathname==="/api/me");
+      await page.goBack();await first;
+      await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+      await page.getByText("У вас нет действующих назначений на годы или площадки олимпиады.",{exact:true}).waitFor();
+    }finally{release();await page.unroute("**/api/me");}
     assert.equal(await page.locator(selector).count(),0);
     assert.deepEqual(errors, [], "No browser runtime errors");
   } finally {

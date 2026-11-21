@@ -18,6 +18,13 @@
 | [008 — удаление команды](decisions/ADR-008-team-deletion-and-invitations.md) | Запрос пользователя от 20 ноября, замена части D02 | [Участие](contracts/PARTICIPATION.md) |
 | [009 — старый логин и результаты](decisions/ADR-009-self-reported-login-and-results.md) | Отмена модерации E00, согласованный CSV | [nsuhw](contracts/NSUHW.md), [результаты](contracts/RESULTS.md) |
 
+Новые решения от 21 ноября 2026:
+
+- [010 — исправление старого логина](decisions/ADR-010-owner-login-correction.md).
+- [011 — версии и отзыв результатов](decisions/ADR-011-result-corrections-and-revocation.md).
+- [012 — командные результаты и курсы](decisions/ADR-012-team-results-and-courses.md).
+- [013 — изоляция проверки файлов](decisions/ADR-013-isolated-file-inspection.md).
+
 ADR сохраняет причину/последствия решения; детали входных форматов/лимитов находятся
 в одном контракте. Q-идентификаторы сохранены для поиска прежних согласований,
 но старые предложения по ним не являются открытыми автоматически.

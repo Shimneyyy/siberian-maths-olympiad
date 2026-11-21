@@ -1,3 +1,4 @@
+import { createIndividualDocuments } from "./result-documents";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -87,6 +88,7 @@ export async function applyResultImport(db: PrismaClient, actorId: string, raw: 
       await tx.individualResult.createMany({ data: chunk.map(({ row, id }) => ({ id, editionId: input.editionId, participationId: row.participationId!, batchId: batch.id, kind: input.kind, total: row.total, prize: row.prize })) });
       await tx.resultProblemScore.createMany({ data: chunk.flatMap(({ row, id }) => problems.map((p, i) => ({ resultId: id, editionId: input.editionId, problemId: p.id, score: row.scores[i] }))) });
     }
+    await createIndividualDocuments(tx,input.editionId,batch.id);
     await tx.auditEvent.create({ data: { actorId, action: "RESULTS_IMPORTED", objectType: "ResultImportBatch", objectId: batch.id, editionId: input.editionId, outcome: "SUCCESS", details: { kind: input.kind, importedCount: batch.importedCount, rejectedCount: batch.rejectedCount } } });
     return { id: batch.id, importedCount: batch.importedCount, rejectedCount: batch.rejectedCount, report };
   }, { timeout: 30000 });

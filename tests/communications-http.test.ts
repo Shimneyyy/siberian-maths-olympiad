@@ -31,10 +31,15 @@ async function exerciseImportRecovery(page: Page, input: {
   await page.getByRole("status").filter({hasText:"Выберите файл и проверьте доступ заново"}).waitFor();
   assert.equal(await file.inputValue(), ""); assert.equal(await preview.isDisabled(), true);
   await page.unroute(previewPath); await prepare();
+  const importPage=page.url();
   for (const status of [401, 403, 409]) {
     await page.route(input.path, route => route.fulfill({ status, contentType: "text/plain", body: "synthetic denial" }));
     await send();
     await table.waitFor({ state: "detached" });
+    if(status===401){
+      await page.waitForURL(new URL("/cabinet",importPage).toString());
+      await page.unroute(input.path);await page.goto(importPage);await prepare();continue;
+    }
     if (status !== 409) {
       assert.equal(await file.inputValue(), "", "Denied access clears the selected source");
       assert.equal(await preview.isDisabled(), true);

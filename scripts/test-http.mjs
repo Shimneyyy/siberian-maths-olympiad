@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { setTimeout } from "node:timers/promises";
 const target = process.argv[2] || "tests/auth-http.test.ts";
-if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
+if (!["tests/auth-http.test.ts", "tests/live.test.ts", "tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts", "tests/achievement-http.test.ts"].includes(target)) throw new Error("Unknown HTTP test target");
 const productionLoad = target === "tests/load-http.test.ts";
 const port = 3100;
 const base = `http://localhost:${port}`;
@@ -21,7 +21,7 @@ if (target === "tests/registration-http.test.ts") {
 // Communications exercise immutable publications. Use a disposable local database,
 // then drop that database rather than bypassing publication protection to clean up.
 let control, disposable, diplomaDirectory;
-if (["tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts"].includes(target)) {
+if (["tests/communications-http.test.ts", "tests/load-http.test.ts", "tests/account-switch-http.test.ts", "tests/registration-http.test.ts", "tests/achievement-http.test.ts"].includes(target)) {
   const url = new URL(env.DATABASE_URL);
   if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local synthetic database required");
   disposable = `smo_test_${randomUUID().replaceAll("-", "")}`;

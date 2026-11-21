@@ -9,6 +9,7 @@ import { sendMail } from "@/lib/mail";
 import { ExternalKeyConfigurationError } from "@/lib/external-secrets/local-keys";
 import { registrationSchema, DEMO_CONSENT_TEXT, DEMO_CONSENT_VERSION } from "@/lib/registration-rules";
 
+import { authProxyIdentity, UntrustedProxy } from "@/lib/proxy-identity";
 import { limitAuthRequest } from "@/lib/atomic-rate-limit";
 import { AdminRateLimit } from "@/lib/admin";
 
@@ -70,15 +71,21 @@ async function dispatch(request: Request) {
     try {
       const { raw, value } = await readJsonBody(request);
       const path=new URL(request.url).pathname.replace(/^\/api\/auth\//, "");
-      if(routes.has(path) && request.headers.get("origin")===new URL(process.env.BETTER_AUTH_URL||"http://localhost:3000").origin) await limitAuthRequest(db,path,value);
+      if(routes.has(path) && request.headers.get("origin")===new URL(process.env.BETTER_AUTH_URL||"http://localhost:3000").origin) await limitAuthRequest(db,path,value,authProxyIdentity(request.headers));
       request = new Request(request.url, { method: request.method, headers: request.headers, body: raw });
     } catch (error) {
+      if(error instanceof UntrustedProxy)return Response.json({error:"Недопустимый источник запроса"},{status:403,headers:{"Cache-Control":"private, no-store"}});
       if(error instanceof AdminRateLimit) return Response.json({error:"Слишком много попыток. Повторите позже."},{status:429,headers:{"Cache-Control":"private, no-store","Retry-After":"60"}});
       if(!(error instanceof BodyTooLarge) && !(error instanceof SyntaxError)) throw error;
       return Response.json({ error: "Invalid body" }, { status: error instanceof BodyTooLarge ? 413 : 400, headers: { "Cache-Control": "no-store" } });
     }
   }
-  const response = await handle(request);
+  let response = await handle(request);
+  const path=new URL(request.url).pathname.replace(/^\/api\/auth\//, "");
+  if(request.method==="POST"&&request.headers.get("origin")===new URL(process.env.BETTER_AUTH_URL||"http://localhost:3000").origin&&response.status>=400&&response.status<500&&response.status!==429){
+    if(path==="email-otp/verify-email")response=Response.json({code:"INVALID_OR_EXPIRED_OTP",message:"Неверный или истекший код подтверждения."},{status:400});
+    if(path==="reset-password")response=Response.json({code:"INVALID_OR_EXPIRED_RESET",message:"Ссылка восстановления недействительна или истекла."},{status:400});
+  }
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;

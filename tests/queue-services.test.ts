@@ -25,8 +25,10 @@ test("atomic limit admits exactly five concurrent requests and account-address b
  const token=randomUUID();
  for(let i=0;i<5;i++)await limitAuthRequest(db,"reset-password",{token,email:`${i}@example.test`});
  await assert.rejects(limitAuthRequest(db,"reset-password",{token,email:"bypass@example.test"}),AdminRateLimit);
+ const oldMax=process.env.AUTH_IP_MAX_PER_MINUTE;process.env.AUTH_IP_MAX_PER_MINUTE="2";
+ try{await limitAuthRequest(db,"sign-in/email",{email:`ip-a-${randomUUID()}@example.test`},"192.0.2.1");await limitAuthRequest(db,"sign-in/email",{email:`ip-b-${randomUUID()}@example.test`},"192.0.2.1");await assert.rejects(limitAuthRequest(db,"sign-in/email",{email:`ip-c-${randomUUID()}@example.test`},"192.0.2.1"),AdminRateLimit);await limitAuthRequest(db,"sign-in/email",{email:`ip-d-${randomUUID()}@example.test`},"192.0.2.2");}finally{if(oldMax===undefined)delete process.env.AUTH_IP_MAX_PER_MINUTE;else process.env.AUTH_IP_MAX_PER_MINUTE=oldMax;}
  const rows=await db.rateLimit.findMany({where:{key:{startsWith:"auth-v1:"}},select:{key:true}});assert.ok(!JSON.stringify(rows).includes(email));
- }finally{await db.rateLimit.deleteMany({where:{OR:[{key},{key:{startsWith:"auth-v1:"}}]}});}
+ }finally{await db.rateLimit.deleteMany({where:{OR:[{key},{key:{startsWith:"auth-v1:"}},{key:{startsWith:"auth-ip-v1:"}}]}});}
 });
 test("preparation leases coordinate independent clients, bound global work and release after failure",async()=>{
  const other=new PrismaClient({adapter:new PrismaPg({connectionString:process.env.DATABASE_URL})});

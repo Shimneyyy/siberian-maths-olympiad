@@ -14,6 +14,9 @@ enum Role {
 }
 
 model User {
+  resultVersions ResultVersion[]
+  resultReleases ResultRelease[]
+  teamResultImports TeamResultImport[]
   withdrawalRequests ConsentWithdrawalRequest[]
   accountImports NsuhwImportBatch[]
   diplomaBatches DiplomaBatch[]
@@ -95,6 +98,11 @@ model ConsentRecord {
 }
 
 model OlympiadEdition {
+  resultDocuments ResultDocument[]
+  resultVersions ResultVersion[]
+  resultRecipients ResultRecipient[]
+  resultReleases ResultRelease[]
+  teamResultImports TeamResultImport[]
   accountImports NsuhwImportBatch[]
   diplomaBatches DiplomaBatch[]
   diplomaItems DiplomaItem[]
@@ -259,6 +267,7 @@ enum ParticipationStatus {
 }
 
 model Participation {
+  resultRecipients ResultRecipient[]
   diplomaItems DiplomaItem[]
   diplomaDocuments DiplomaDocument[]
   individualResults IndividualResult[]
@@ -560,6 +569,7 @@ model EditionProblem {
 }
 
 model IndividualResult {
+  document ResultDocument?
   id String @id @default(uuid()) @db.Uuid
   editionId String @db.Uuid
   participationId String @db.Uuid
@@ -677,4 +687,99 @@ model ConsentWithdrawalRequest {
   reviewedAt DateTime? @db.Timestamptz(3)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@index([userId, createdAt])
+}
+
+// Immutable versions and recipient snapshots; publication is an explicit release.
+model ResultDocument {
+  id String @id @default(uuid()) @db.Uuid
+  editionId String @db.Uuid
+  sourceResultId String? @unique @db.Uuid
+  kind ResultKind
+  teamKey String? @db.Uuid
+  teamName String?
+  teamBatchId String? @db.Uuid
+  revision Int @default(0)
+  currentVersionId String? @unique @db.Uuid
+  withdrawn Boolean @default(false)
+  edition OlympiadEdition @relation(fields:[editionId],references:[id],onDelete:Restrict)
+  sourceResult IndividualResult? @relation(fields:[sourceResultId,editionId],references:[id,editionId],onDelete:Restrict)
+  teamBatch TeamResultImport? @relation(fields:[teamBatchId,editionId,kind],references:[id,editionId,kind],onDelete:Restrict)
+  currentVersion ResultVersion? @relation("CurrentResultVersion",fields:[currentVersionId,id],references:[id,documentId],onDelete:Restrict)
+  versions ResultVersion[] @relation("ResultVersions")
+  recipients ResultRecipient[]
+  releases ResultRelease[]
+  @@unique([id,editionId])
+  @@unique([teamKey,kind])
+  @@unique([sourceResultId,editionId])
+  @@unique([currentVersionId,id])
+  @@index([editionId,kind])
+}
+model ResultVersion {
+  edition OlympiadEdition @relation(fields:[editionId],references:[id],onDelete:Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  documentId String @db.Uuid
+  editionId String @db.Uuid
+  actorId String @db.Uuid
+  number Int
+  scores Json
+  total Int?
+  prize String? @db.VarChar(200)
+  reason String? @db.VarChar(2000)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  document ResultDocument @relation("ResultVersions",fields:[documentId,editionId],references:[id,editionId],onDelete:Restrict)
+  currentFor ResultDocument? @relation("CurrentResultVersion")
+  actor User @relation(fields:[actorId],references:[id],onDelete:Restrict)
+  releases ResultRelease[]
+  @@unique([id,documentId])
+  @@unique([id,editionId])
+  @@unique([documentId,number])
+}
+model ResultRecipient {
+  edition OlympiadEdition @relation(fields:[editionId],references:[id],onDelete:Restrict)
+  documentId String @db.Uuid
+  editionId String @db.Uuid
+  participationId String @db.Uuid
+  fullName String
+  courseLabel String
+  universityName String
+  document ResultDocument @relation(fields:[documentId,editionId],references:[id,editionId],onDelete:Restrict)
+  participation Participation @relation(fields:[participationId,editionId],references:[id,editionId],onDelete:Restrict)
+  @@id([documentId,participationId])
+  @@index([participationId])
+}
+enum ResultReleaseAction {
+  PUBLISH
+  REVOKE
+}
+model ResultRelease {
+  edition OlympiadEdition @relation(fields:[editionId],references:[id],onDelete:Restrict)
+  id String @id @db.Uuid
+  documentId String @db.Uuid
+  editionId String @db.Uuid
+  versionId String @db.Uuid
+  actorId String @db.Uuid
+  revision Int
+  action ResultReleaseAction
+  reason String? @db.VarChar(2000)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  document ResultDocument @relation(fields:[documentId,editionId],references:[id,editionId],onDelete:Restrict)
+  version ResultVersion @relation(fields:[versionId,documentId],references:[id,documentId],onDelete:Restrict)
+  actor User @relation(fields:[actorId],references:[id],onDelete:Restrict)
+  @@unique([documentId,revision])
+}
+model TeamResultImport {
+  id String @id @db.Uuid
+  editionId String @db.Uuid
+  kind ResultKind
+  actorId String @db.Uuid
+  sourceHash String @db.Char(64)
+  importedCount Int
+  rejectedCount Int
+  report Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  edition OlympiadEdition @relation(fields:[editionId],references:[id],onDelete:Restrict)
+  actor User @relation(fields:[actorId],references:[id],onDelete:Restrict)
+  documents ResultDocument[]
+  @@unique([id,editionId,kind])
+  @@index([editionId,createdAt])
 }

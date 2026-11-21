@@ -28,11 +28,62 @@ services:
       - "127.0.0.1:3310:3310"
     volumes:
       - ./infra/clamd-demo.conf:/etc/clamav/clamd-demo.conf:ro
+      - clamav_data:/var/lib/clamav
     healthcheck:
       test: [CMD, clamdscan, --config-file=/etc/clamav/clamd-demo.conf, --ping=1]
       interval: 3s
       timeout: 5s
       retries: 40
     mem_limit: 2g
+  clamav-updater:
+    profiles: [files]
+    image: clamav/clamav@sha256:6d87c712e3391e13c1ba6e05dfb074d4b1ddb5a6834b23bb9da990d2a4ef042a
+    entrypoint: [freshclam, --daemon, --foreground, --stdout, --checks=12]
+    healthcheck:
+      disable: true
+    volumes:
+      - clamav_data:/var/lib/clamav
+    restart: unless-stopped
+    mem_limit: 256m
+  pdf-inspector:
+    profiles: [files]
+    build:
+      context: .
+      dockerfile: infra/pdf-inspector/Dockerfile
+    networks: [pdf_isolated]
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3320/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  pdf-relay:
+    profiles: [files]
+    image: smo-dev-pdf-inspector
+    pull_policy: never
+    command: [node, --jitless, --max-old-space-size=32, relay.mjs]
+    depends_on:
+      pdf-inspector:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3320:3320"
+    networks: [default, pdf_isolated]
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.25
+networks:
+  pdf_isolated:
+    internal: true
 volumes:
   postgres_data:
+  clamav_data:

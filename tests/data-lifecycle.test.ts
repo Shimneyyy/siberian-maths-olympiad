@@ -1,3 +1,4 @@
+import { createIndividualDocuments, releaseOriginalBatch } from "../src/lib/result-documents";
 import "dotenv/config";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,7 +27,12 @@ async function fixture() {
     if (!p) { const c = owner === user.id ? consent : await db.consentRecord.create({ data: { userId: owner, purpose: "synthetic-demo-only", textVersion: "demo", textHash: "b".repeat(64) } }); p = await db.participation.create({ data: { editionId: edition.id, userId: owner, format: "REMOTE", remoteZone: "NSK", fullName: "Учебный участник", universityId: uni.id, universityName: uni.name, universityAbbreviation: uni.abbreviation, courseId: course.id, courseLabel: course.label, consentId: c.id } }); }
     const batch = await db.resultImportBatch.create({ data: { id: randomUUID(), editionId: edition.id, actorId: chief.id, kind, sourceHash: "a".repeat(64), importedCount: 1, rejectedCount: 0, report: [{ line: 2, error: null }] } });
     const result = await db.individualResult.create({ data: { editionId: edition.id, participationId: p.id, batchId: batch.id, kind, total: 0, prize: "Учебная номинация" } });
-    if (published) await db.resultPublication.create({ data: { batchId: batch.id, actorId: chief.id, publishedAt: new Date("2020-01-01T00:00:00Z") } });
+    await db.$transaction(async tx=>{
+      const problem=await tx.editionProblem.upsert({where:{editionId_ordinal:{editionId:edition.id,ordinal:1}},create:{editionId:edition.id,ordinal:1},update:{}});
+      await tx.resultProblemScore.create({data:{resultId:result.id,editionId:edition.id,problemId:problem.id,score:0}});
+      await createIndividualDocuments(tx,edition.id,batch.id);
+      if(published){await releaseOriginalBatch(tx,chief.id,edition.id,batch.id);await tx.resultPublication.create({data:{batchId:batch.id,actorId:chief.id,publishedAt:new Date("2020-01-01T00:00:00Z")}});}
+    });
     return result;
   };
   return { user, other, chief, consent, add, year: serial++ };

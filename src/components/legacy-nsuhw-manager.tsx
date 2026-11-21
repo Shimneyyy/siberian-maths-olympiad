@@ -10,8 +10,8 @@ export function LegacyNsuhwManager() {
   const hydrated = useHydrated();
   const [login, setLogin] = useState<Login | null>(null), [hasPrepared, setHasPrepared] = useState(false);
   const [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false), [message, setMessage] = useState("");
-  async function api(body?: unknown) {
-    const response = await clientFetch("/api/nsuhw/legacy", { method: body === undefined ? "GET" : "POST", cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+  async function api(body?: unknown, method = "POST") {
+    const response = await clientFetch("/api/nsuhw/legacy", { method: body === undefined ? "GET" : method, cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Повторите позже");
     return result;
@@ -32,6 +32,10 @@ export function LegacyNsuhwManager() {
     <p>Старый логин сохраняется сразу, без проверки организатором. Он нужен для сопоставления ваших результатов и дипломов. Введите точное написание, включая регистр.</p>
     <Button disabled={!hydrated || busy} onClick={() => void action(load)}>Показать мой аккаунт nsuhw</Button>
     {loaded && login && <article className="space-y-3 rounded border p-4"><p>Логин nsuhw: {login.login}</p><p>Старый логин сохранён. Подтверждение организатором не требуется.</p><p>Пароль старого аккаунта не хранится в ЛК. Используйте прежний пароль или восстановление на nsuhw.</p></article>}
+    {loaded && login && <form key={`${login.id}:${login.revision}`} method="post" className="space-y-3" onSubmit={event => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      void action(async () => { await api({login:form.get("login"),revision:login.revision}, "PATCH"); await load(); setMessage("Логин исправлен. Ранее привязанные достижения сохранены."); });
+    }}><label className="block">Исправить старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} defaultValue={login.login} autoComplete="off" disabled={busy}/></label><p>Исправление влияет на будущую загрузку. Уже привязанные результаты и дипломы остаются у вас.</p><Button disabled={!hydrated || busy}>Исправить логин</Button></form>}
     {loaded && !login && <><NsuhwLoginNamesEditor onPrepared={() => setHasPrepared(true)} /><NsuhwSecretPanel /></>}
     {loaded && !login && !hasPrepared && <form method="post" className="space-y-3" onSubmit={event => {
       event.preventDefault(); const form = new FormData(event.currentTarget);

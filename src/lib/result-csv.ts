@@ -1,10 +1,14 @@
 import { OlympiadError } from "./olympiad-rules";
 export const RESULT_CSV_LIMIT = 524288;
 export type ResultRow = { line: number; login: string; fullName: string | null; course: string | null; university: string | null; scores: (number | null)[]; total: number | null; prize: string | null; error: string | null };
-const invalid = () => new OlympiadError("CONFLICT", "Неверная структура CSV. Нужны UTF-8 CSV, Логин, задачи по порядку и Сумма или Сумма баллов; ФИО, Курс, Вуз и Приз необязательны.");
+const invalidIndividual = () => new OlympiadError("CONFLICT", "Неверная структура CSV. Нужны UTF-8 CSV, Логин, задачи по порядку и Сумма или Сумма баллов; ФИО, Курс, Вуз и Приз необязательны.");
 // Bounded RFC-style CSV reader. Broken framing rejects the file: guessing record
 // boundaries after an unmatched quote could attach a score to the wrong login.
-export function parseResultCsv(source: string) {
+export function parseResultCsv(source: string, subject: "individual" | "team" = "individual") {
+  const invalid = subject === "individual" ? invalidIndividual : () => new OlympiadError("CONFLICT", "Нужны ID команды, необязательные Название команды/Курсы участников/Вуз, задачи по порядку, Сумма баллов и необязательный Приз.");
+  const identity = subject === "team" ? "ID команды" : "Логин";
+  const nameLabel = subject === "team" ? "Название команды" : "ФИО";
+  const courseLabel = subject === "team" ? "Курсы участников" : "Курс";
   if (Buffer.byteLength(source, "utf8") > RESULT_CSV_LIMIT || source.includes("\uFFFD") || source.includes("\0")) throw invalid();
   const text = source.replace(/^\uFEFF/, "");
   const records: { line: number; cells: string[] }[] = [];
@@ -33,9 +37,9 @@ export function parseResultCsv(source: string) {
   const taskCount = totalIndex - firstTask;
   if (firstTask < 1 || taskCount < 1 || taskCount > 50) throw invalid();
   const metadata = header.slice(0, firstTask);
-  if (!metadata.includes("Логин") || metadata.some(name => !["Логин", "ФИО", "Курс", "Вуз"].includes(name))) throw invalid();
+  if (!metadata.includes(identity) || metadata.some(name => ![identity, nameLabel, courseLabel, "Вуз"].includes(name))) throw invalid();
   if (header.slice(firstTask, totalIndex).some((name, i) => name !== `Задача ${i + 1}`)) throw invalid();
-  const loginIndex = header.indexOf("Логин");
+  const loginIndex = header.indexOf(identity);
   const metadataValue = (cells: string[], name: string) => {
     const index = metadata.indexOf(name);
     return index < 0 ? null : cells[index]?.trim() || null;
@@ -46,7 +50,7 @@ export function parseResultCsv(source: string) {
     return Number(value);
   };
   const rows: ResultRow[] = records.map(r => {
-    const row: ResultRow = { line: r.line, login: r.cells[loginIndex]?.trim() ?? "", fullName: metadataValue(r.cells, "ФИО"), course: metadataValue(r.cells, "Курс"), university: metadataValue(r.cells, "Вуз"), scores: [], total: null, prize: null, error: null };
+    const row: ResultRow = { line: r.line, login: r.cells[loginIndex]?.trim() ?? "", fullName: metadataValue(r.cells, nameLabel), course: metadataValue(r.cells, courseLabel), university: metadataValue(r.cells, "Вуз"), scores: [], total: null, prize: null, error: null };
     if (r.cells.length !== header.length) row.error = "COLUMN_COUNT";
     else if (!row.login || row.login.length > 254 || /[\u0000-\u001f\u007f]/.test(row.login)) row.error = "INVALID_LOGIN";
     else if (hasPrize && r.cells.at(-1)!.length > 200) row.error = "INVALID_PRIZE";

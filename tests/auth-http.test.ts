@@ -541,3 +541,18 @@ test("retired second-factor routes are unavailable to guests and signed-in users
     }
   } finally { cookies.clear(); await db.auditEvent.deleteMany({ where: { actorId: user.id } }); await db.user.delete({ where: { id: user.id } }); await db.rateLimit.deleteMany(); }
 });
+
+
+test("public OTP/reset replies do not distinguish nonexistent users or missing/wrong verification codes",async()=>{
+ cookies.clear();await db.rateLimit.deleteMany();const before=(await db.verification.findMany({select:{id:true}})).map(x=>x.id);
+ const email=`enum-${randomUUID()}@example.test`,unknown=`missing-${randomUUID()}@example.test`;
+ const user=await db.user.create({data:{email,name:"Учебная проверка ответов"}});
+ try{
+  const known=await request("/api/auth/email-otp/send-verification-otp",{email,type:"email-verification"},false),absent=await request("/api/auth/email-otp/send-verification-otp",{email:unknown,type:"email-verification"},false);
+  assert.equal(known.status,200);assert.equal(absent.status,200);assert.deepEqual(await known.json(),await absent.json());
+  const code=(await mail(email,"Подтверждение")).match(/\b\d{6}\b/)?.[0];assert.ok(code);const wrong=String((Number(code[0])+1)%10)+code.slice(1);
+  const wrongKnown=await request("/api/auth/email-otp/verify-email",{email,otp:wrong},false),wrongAbsent=await request("/api/auth/email-otp/verify-email",{email:unknown,otp:wrong},false);
+  assert.equal(wrongKnown.status,400);assert.equal(wrongAbsent.status,400);assert.deepEqual(await wrongKnown.json(),await wrongAbsent.json());
+  const a=await request("/api/auth/request-password-reset",{email,redirectTo:"/reset-password"},false),b=await request("/api/auth/request-password-reset",{email:unknown,redirectTo:"/reset-password"},false);assert.equal(a.status,200);assert.equal(b.status,200);assert.deepEqual(await a.json(),await b.json());
+ }finally{await db.verification.deleteMany({where:{id:{notIn:before}}});await db.user.delete({where:{id:user.id}});}
+});

@@ -32,6 +32,7 @@ export default async function Cabinet() {
       ["/cabinet/mail", "Рассылки"],
       ["/cabinet/nsuhw-export", "Передача аккаунтов в nsuhw"],
       ["/cabinet/results-import", "Загрузка личных результатов"],
+      ["/cabinet/team-results-import", "Загрузка командных результатов"],
       ["/cabinet/nsuhw-import", "Импорт готовых аккаунтов nsuhw"],
     ] : []),
     ...(["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") ? [

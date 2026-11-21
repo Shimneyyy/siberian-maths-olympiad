@@ -11,7 +11,7 @@
 Не заменяйте существующий BETTER_AUTH_SECRET.
 
 ```sh
-docker compose --profile files up -d --wait
+docker compose --profile files up -d --build --wait
 npm run db:generate
 npm run db:migrate
 npm run db:seed

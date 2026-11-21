@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { APIError } from "better-auth/api";
 import { AccessDenied } from "./access";
+import { UploadReadTimeout } from "./private-files/upload-body";
 import { BodyTooLarge, readJsonBody } from "./http-body";
 import { OlympiadError } from "./olympiad-rules";
 import { UnsafeZip } from "./private-files/zip-preview";
@@ -19,6 +20,8 @@ export async function executeOlympiadRequest(request: Request, deps: RequestDepe
   if (request.method !== "GET" && request.headers.get("origin") !== new URL(process.env.BETTER_AUTH_URL || "http://localhost:3000").origin) return Response.json({ error: "Недопустимый источник запроса" }, { status: 403, headers });
   session = await deps.session(request.headers);
   if (!session?.user.emailVerified) return Response.json({ error: "Необходим вход" }, { status: 401, headers });
+    const renderedActor=request.headers.get("x-smo-actor");
+    if(renderedActor&&renderedActor!==session.user.id)return Response.json({error:"Аккаунт изменился. Перезагрузите кабинет.",code:"SESSION_CHANGED"},{status:409,headers});
     if (request.method !== "GET") body = decodeBody ? await decodeBody(session.user.id) : (await readJsonBody(request, bodyLimit)).value;
     const result = await operation(session.user.id, body);
     if (result instanceof Response) return result;
@@ -28,6 +31,7 @@ export async function executeOlympiadRequest(request: Request, deps: RequestDepe
     if (error instanceof PdfInspectorUnavailable || error instanceof ScannerUnavailable) return Response.json({ error: "Проверка файлов временно недоступна. Повторите позже." }, { status: 503, headers });
     if (error instanceof InvalidMailTemplate) return Response.json({ error: "Проверьте разрешённые переменные шаблона" }, { status: 400, headers });
     if (error instanceof AdminRateLimit) return Response.json({ error: "Слишком много попыток" }, { status: 429, headers });
+    if (error instanceof UploadReadTimeout) return Response.json({error:"Загрузка заняла слишком много времени. Повторите отправку."},{status:408,headers});
     if (error instanceof BodyTooLarge) return Response.json({ error: "Слишком большой запрос" }, { status: 413, headers });
     if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ error: "Проверьте поля формы" }, { status: 400, headers });
     if (error instanceof APIError || error instanceof AccessDenied) {

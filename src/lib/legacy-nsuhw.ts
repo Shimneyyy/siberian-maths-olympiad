@@ -39,3 +39,24 @@ export async function submitLegacyNsuhw(db: PrismaClient, actorId: string, raw: 
   await legacyNsuhwView(db,actorId);
   return db.$transaction(tx => submitLegacyNsuhwInTransaction(tx,actorId,input.login));
 }
+
+// Only the owner may correct a declaration. Existing achievements are linked by
+// participation, so this changes future matching without transferring history.
+export async function correctLegacyNsuhw(db: PrismaClient, actorId: string, raw: unknown) {
+  const input = z.object({ login: legacyNsuhwLogin, revision: z.int().nonnegative() }).strict().parse(raw);
+  await legacyNsuhwView(db, actorId);
+  return db.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${actorId}::uuid FOR UPDATE`;
+    await legacyNsuhwView(tx, actorId);
+    const user = await tx.user.findUniqueOrThrow({where:{id:actorId}});
+    assertDemoRegistration(user.email);
+    await lockNsuhwNamespace(tx);
+    if (await tx.preparedExternalAccount.findUnique({where:{userId:actorId}})) throw new OlympiadError("CONFLICT", "Подготовленный аккаунт не заменяется старым логином");
+    const old = await tx.legacyNsuhwClaim.findUnique({where:{userId:actorId}});
+    if (!old || old.revision !== input.revision) throw new OlympiadError("CONFLICT", "Логин уже изменён. Обновите данные.");
+    if (old.login === input.login) return {id:old.id,login:old.login,revision:old.revision};
+    const changed = await tx.legacyNsuhwClaim.update({where:{id:old.id},data:{login:input.login,revision:{increment:1}},select:ownSelect});
+    await tx.auditEvent.create({data:{actorId,action:"NSUHW_LEGACY_LOGIN_CORRECTED",objectType:"LegacyNsuhwClaim",objectId:old.id,outcome:"SUCCESS",details:{revision:changed.revision}}});
+    return changed;
+  });
+}

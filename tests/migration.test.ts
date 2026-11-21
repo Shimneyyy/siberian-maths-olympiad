@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+process.env.DEMO_REGISTRATION="true";
 test("R03 migration preserves old users, grants and annual history and enforces one administrator", async () => {
   const db = new Client({ connectionString: process.env.DATABASE_URL });
   const schema = `migration_${randomUUID().replaceAll("-", "")}`;
@@ -96,4 +97,23 @@ test("self-reported login migration preserves both pending and approved old logi
     await db.query('INSERT INTO "LegacyNsuhwClaim" (id,"userId",login) VALUES ($1,$2,$3)', [randomUUID(),third,"legacy.same"]);
     assert.equal((await db.query('SELECT count(*)::int AS n FROM "LegacyNsuhwClaim"')).rows[0].n,3);
   } finally { await db.query('SET search_path TO public'); await db.query(`DROP SCHEMA "${schema}" CASCADE`); await db.end(); }
+});
+
+test("result version migration backfills published achievements and preserves immutable original imports",async()=>{
+ const {PrismaClient}=await import("@prisma/client"),{PrismaPg}=await import("../src/lib/pg-adapter"),{personalHistory}=await import("../src/lib/personal-history");
+ const schema=`result_backfill_${randomUUID().replaceAll("-","")}`,connection=process.env.DATABASE_URL!;
+ const sql=new Client({connectionString:connection});const db=new PrismaClient({adapter:new PrismaPg({connectionString:connection,options:`-c search_path=${schema}`},{schema})});
+ await sql.connect();await sql.query(`CREATE SCHEMA "${schema}"`);await sql.query(`SET search_path TO "${schema}"`);
+ try{
+  const change="20261121090000_result_versions_and_team_snapshots";
+  for(const m of(await readdir("prisma/migrations")).filter(x=>/^\d/.test(x)&&x<change).sort())await sql.query(await readFile(`prisma/migrations/${m}/migration.sql`,"utf8"));
+  const chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный главный",role:"CHIEF_ORGANIZER",emailVerified:true}}),owner=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный владелец",emailVerified:true}}),edition=await db.olympiadEdition.create({data:{year:9998,title:"Учебный перенос"}}),uni=await db.university.create({data:{name:"Учебный вуз",abbreviation:"УВ"}}),course=await db.courseOption.create({data:{label:"Учебный курс"}}),consent=await db.consentRecord.create({data:{userId:owner.id,purpose:"synthetic-demo-only",textVersion:"demo",textHash:"a".repeat(64)}});
+  const p=await db.participation.create({data:{userId:owner.id,editionId:edition.id,format:"REMOTE",remoteZone:"NSK",fullName:owner.name,universityId:uni.id,universityName:uni.name,universityAbbreviation:uni.abbreviation,courseId:course.id,courseLabel:course.label,consentId:consent.id}}),batch=await db.resultImportBatch.create({data:{id:randomUUID(),editionId:edition.id,actorId:chief.id,kind:"FINAL",sourceHash:"a".repeat(64),importedCount:1,rejectedCount:0,report:[]}}),problem=await db.editionProblem.create({data:{editionId:edition.id,ordinal:1}}),result=await db.individualResult.create({data:{editionId:edition.id,participationId:p.id,batchId:batch.id,kind:"FINAL",total:0,prize:"Учебный приз"}});
+  await db.resultProblemScore.create({data:{resultId:result.id,editionId:edition.id,problemId:problem.id,score:0}});await db.resultPublication.create({data:{batchId:batch.id,actorId:chief.id}});
+  await sql.query(await readFile(`prisma/migrations/${change}/migration.sql`,"utf8"));
+  const doc=await db.resultDocument.findUniqueOrThrow({where:{sourceResultId:result.id},include:{currentVersion:true,recipients:true}});
+  assert.equal(doc.currentVersion?.total,0);assert.equal(doc.recipients[0].courseLabel,course.label);assert.equal((await personalHistory(db,owner.id)).rows[0].prize,"Учебный приз");assert.deepEqual(await db.individualResult.findUniqueOrThrow({where:{id:result.id}}),result);
+  await assert.rejects(db.resultVersion.update({where:{id:doc.currentVersionId!},data:{total:1}}));
+  await assert.rejects(db.resultVersion.create({data:{documentId:doc.id,editionId:edition.id,actorId:chief.id,number:2,scores:[1],total:1}}));
+ }finally{await db.$disconnect();await sql.query('SET search_path TO public');await sql.query(`DROP SCHEMA "${schema}" CASCADE`);await sql.end();}
 });

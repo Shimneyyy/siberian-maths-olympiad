@@ -1,8 +1,10 @@
 import { createConnection } from "node:net";
-export class ScannerUnavailable extends Error { constructor() { super("FILE_SCANNER_UNAVAILABLE"); } }
+import { scannerDatabaseStatus, ScannerUnavailable } from "./scanner-health";
+export { ScannerUnavailable } from "./scanner-health";
 // Local demo transport; no filename, storage path or user metadata reaches clamd.
 export async function scanWithClamav(input: Uint8Array, port = 3310, timeoutMs = 30000): Promise<"CLEAN" | "REJECTED"> {
   if (process.env.DEMO_REGISTRATION !== "true" || process.env.NODE_ENV === "production" || !input.byteLength || input.byteLength > 10 * 1024 * 1024 || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw new ScannerUnavailable();
+  if(!(await scannerDatabaseStatus(port,Math.min(timeoutMs,2000))).fresh)throw new ScannerUnavailable();
   const bytes = Buffer.from(input);
   return new Promise((resolve, reject) => {
     let finished = false, sent = false, response = "";

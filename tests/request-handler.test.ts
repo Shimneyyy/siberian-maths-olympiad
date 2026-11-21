@@ -14,3 +14,9 @@ test("session outage and denial-audit failure are fixed 503/no-store without exe
  assert.equal(audit.status,503);assert.ok(!(await audit.text()).includes("private-audit"));
  const denied=await executeOlympiadRequest(request(),{session:async()=>session,denialAudit:async()=>{}},async()=>{throw new AccessDenied("FORBIDDEN");});assert.equal(denied.status,403);
 });
+
+test("a stale tab cannot execute a mutation as a different account after cookies change",async()=>{
+ let called=false;const request=new Request("http://localhost/api/example",{method:"POST",headers:{Origin:process.env.BETTER_AUTH_URL||"http://localhost:3000","X-SMO-Actor":randomUUID()},body:"{}"});
+ const response=await executeOlympiadRequest(request,{session:async()=>session,denialAudit:async()=>{}},async()=>{called=true;return {};});
+ assert.equal(response.status,409);assert.equal((await response.json()).code,"SESSION_CHANGED");assert.equal(called,false);assert.match(response.headers.get("cache-control")||"",/no-store/);
+});

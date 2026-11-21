@@ -14,7 +14,10 @@ BETTER_AUTH_SECRET, SMTP на Mailpit. Команды начальной под�
 Не заменять ключи существующей БД; тесты не повод для migrate reset.
 
 Для files/communications/restore-drill нужен настоящий ClamAV:
-docker compose --profile files up -d --wait clamav; для PDF — /usr/bin/prlimit.
+docker compose --profile files up -d --build --wait clamav pdf-inspector pdf-relay.
+Prlimit находится внутри PDF-контейнера; app не запускает парсер под своим UID.
+Для pinned synthetic баз CI явно задаёт CLAMAV_MAX_DATABASE_AGE_HOURS=720; по
+умолчанию 168 и stale-базы блокируют сканирование. Настройка не доказывает их актуальность.
 Для Chromium: npx playwright install chromium (в CI --with-deps), либо
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium, если браузер уже установлен.
 
@@ -36,9 +39,11 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 | npm run typecheck | Next typegen и TypeScript noEmit; генерирует .next |
 | npm run test:pg | pg-adapter/registrations с --throw-deprecation; PostgreSQL |
 | npm run test:db | Последовательные service/DB/CLI тесты из package.json, включая отказ session/audit, конкурентные auth limits, staff reauth, каталоги, preparation leases, orphan staging, scopes, гонки команд, миграцию самоввода логина, SQL-инварианты, новый CSV, импорт, outbox, lifecycle и parser-примитивы |
+| npm run test:achievements | Chromium: правка логина, новая версия/публикация/отзыв, командный CSV/курсы, повтор после потерянного ответа и защита старой вкладки; временная БД |
+| npm run ops:check | Read-only local synthetic preflight: runtime/миграции/права/worker/AV/SMTP, без отправки письма; не допуск production |
 | npm run test:files | Дипломы/PDF/ZIP/карантин/протокол и реальный ClamAV/EICAR; PostgreSQL, prlimit, сканер |
 | npm run test:ops | Managed backup и настоящий restore-drill; PostgreSQL/Docker, ClamAV, synthetic env |
-| npm run test:http | Шесть auth/HTTP сценариев через dev :3100, Mailpit; предоставленная тестовая БД |
+| npm run test:http | Семь auth/HTTP сценариев через dev :3100, Mailpit; предоставленная тестовая БД |
 | npm run test:registration | Два отдельных запуска registration-http: настоящий отказ keyring и SMTP, UI/rollback/сохранение аккаунта |
 | npm run test:account-switch | Chromium: auth/autofill/меню/пустой admin → CLI выпуска → назначение; временная БД |
 | npm run test:live | Две Chromium-сессии, удаление команды/входящие приглашения/профиль/явка/offline/отзыв, manual export 403/polling, каталоги и 375px; предоставленная тестовая БД |
@@ -54,9 +59,9 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 ## Порядок полного CI
 
 Workflow делает npm ci → db:generate → db:migrate → db:seed дважды → keyring init →
-lint → typecheck → test:pg → test:db → запуск ClamAV → test:files → test:ops →
+lint → typecheck → запуск ClamAV/PDF-worker/relay → test:pg → test:db → test:files → test:ops →
 установка Chromium → test:http → test:registration → test:account-switch → test:live →
-test:communications → test:load → build → check:build.
+test:achievements → test:communications → test:load → build → check:build.
 В CI PG_CONTAINER указывает существующий PostgreSQL service-контейнер для ops.
 Каждый шаг в pipeline последовательный. Наличие шага не означает его успех на HEAD.
 Отдельного шага npm audit нет; для проверки зависимостей его запускают отдельно,

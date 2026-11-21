@@ -20,6 +20,10 @@ import { withPreparationLease } from "./private-files/preparation-lease";
 export async function prepareDiplomaBatch(db: PrismaClient, actorId: string, raw: unknown, store=diplomaStorage()) {
  return withPreparationLease(db,actorId,()=>prepareDiplomaBatchInternal(db,actorId,raw,store));
 }
+// The HTTP adapter must acquire the same lease before allocating multipart bytes.
+export async function prepareDiplomaUpload(db: PrismaClient, actorId: string, decode: () => Promise<unknown>, store=diplomaStorage()) {
+ return withPreparationLease(db,actorId,async()=>prepareDiplomaBatchInternal(db,actorId,await decode(),store));
+}
 async function prepareDiplomaBatchInternal(db:PrismaClient,actorId:string,raw:unknown,store=diplomaStorage()){
  const input=scope.extend({...proof,id:z.uuid(),bytes:z.instanceof(Uint8Array)}).strict().parse(raw);
  await diplomaChief(db,actorId,input.editionId);await reauthenticateParticipationChief(db,actorId,input.password);
