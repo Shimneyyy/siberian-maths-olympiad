@@ -1,6 +1,6 @@
 "use client";
 import { clientFetch } from "@/lib/client-fetch";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -11,13 +11,14 @@ const local = (value: string | null) => value ? new Date(new Date(value).getTime
 export function AdminManager({ editions }: { editions: Edition[] }) {
   const router = useRouter();
   const hydrated = useHydrated();
+  const creation = useRef<{id:string;year:number;title:string}|null>(null);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   async function send(path: string, body: unknown) {
     setBusy(true); setMessage("");
     try {
       const response = await clientFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
-      setMessage(response.ok ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email." : result.error || "Ошибка");
+      setMessage(response.ok ? (path === "/api/admin/chief" ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email." : "Сроки регистрации сохранены.") : result.error || "Ошибка");
       if (response.ok) router.refresh();
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }
@@ -26,9 +27,31 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
     {!editions.length && <section aria-labelledby="admin-empty-editions" className="space-y-3 rounded border border-border bg-white p-5">
       <h2 id="admin-empty-editions" className="text-xl font-semibold">Пока нет выпусков олимпиады</h2>
       <p>Главные организаторы и сроки регистрации назначаются для конкретного выпуска. Поэтому формы появятся после его создания.</p>
-      <p>Первый выпуск создаёт оператор системы. После создания обновите список выпусков.</p>
+      <p>Создайте выпуск формой ниже. После создания станут доступны сроки и назначение главного организатора.</p>
       <Button type="button" variant="outline" disabled={!hydrated || busy} onClick={() => router.refresh()}>Обновить список выпусков</Button>
     </section>}
+    <section className="space-y-3 rounded border border-border bg-white p-5" aria-labelledby="admin-create-edition">
+      <h2 id="admin-create-edition" className="text-xl font-semibold">Создать выпуск олимпиады</h2>
+      <p>Создаётся новый год без сроков регистрации и назначений. Затем настройте период и назначьте главного организатора.</p>
+      <form method="post" className="space-y-3" onSubmit={async event => {
+        event.preventDefault(); const form=event.currentTarget,f=new FormData(form),year=Number(f.get("year")),title=String(f.get("title")||"").trim();
+        if(!creation.current||creation.current.year!==year||creation.current.title!==title)creation.current={id:crypto.randomUUID(),year,title};
+        setBusy(true);setMessage("");
+        try {
+          const response=await clientFetch("/api/admin/editions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...creation.current,password:f.get("password"),confirmed:f.get("confirmed")==="on"})});
+          const result=await response.json();
+          if(!response.ok){setMessage(result.error||"Не удалось создать выпуск");return;}
+          creation.current=null;form.reset();setMessage(`Выпуск ${result.year} создан. Настройте сроки и назначьте главного организатора.`);router.refresh();
+        }catch{setMessage("Ответ не получен. Повторите эту же форму: повтор не создаёт второй выпуск.");}
+        finally{setBusy(false);const p=form.elements.namedItem("password") as HTMLInputElement,c=form.elements.namedItem("confirmed") as HTMLInputElement;p.value="";c.checked=false;}
+      }}><fieldset disabled={busy||!hydrated} className="space-y-3">
+        <label className="block">Год нового выпуска<input className={field} name="year" type="number" min={1} max={9999} step={1} required/></label>
+        <label className="block">Название нового выпуска<input className={field} name="title" required maxLength={200}/></label>
+        <label className="block">Текущий пароль для создания выпуска<input className={field} name="password" type="password" autoComplete="current-password" required maxLength={128}/></label>
+        <label className="block"><input type="checkbox" name="confirmed" required/> Подтверждаю создание нового выпуска</label>
+        <Button>Создать выпуск</Button>
+      </fieldset></form>
+    </section>
     {editions.map(e => <section key={`${e.id}-${e.revision}`} className="space-y-4 rounded border p-5"><h2>{e.year} · {e.title}</h2>
       <form method="post" className="space-y-3" onSubmit={async event => {
         event.preventDefault(); const form = event.currentTarget, f = new FormData(form);

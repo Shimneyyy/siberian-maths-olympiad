@@ -24,6 +24,7 @@
 - [011 — версии и отзыв результатов](decisions/ADR-011-result-corrections-and-revocation.md).
 - [012 — командные результаты и курсы](decisions/ADR-012-team-results-and-courses.md).
 - [013 — изоляция проверки файлов](decisions/ADR-013-isolated-file-inspection.md).
+- [014 — создание выпуска администратором](decisions/ADR-014-admin-edition-creation.md).
 
 ADR сохраняет причину/последствия решения; детали входных форматов/лимитов находятся
 в одном контракте. Q-идентификаторы сохранены для поиска прежних согласований,

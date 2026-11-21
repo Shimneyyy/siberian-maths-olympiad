@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -30,6 +30,27 @@ async function reauthenticate(db: PrismaClient, actorId: string, password: strin
   }
 }
 const credentials = { password: z.string().min(1).max(128) };
+const createEditionSchema = z.object({ id: z.uuid(), year: z.int().min(1).max(9999),
+  title: z.string().trim().min(1).max(200), confirmed: z.literal(true), ...credentials }).strict();
+export async function createAdminEdition(db: PrismaClient, actorId: string, raw: unknown) {
+  const input = createEditionSchema.parse(raw);
+  const creationHash=createHash("sha256").update(JSON.stringify([input.year,input.title])).digest("hex");
+  await reauthenticate(db, actorId, input.password);
+  return db.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(4726, 4)`;
+    await authorizeAdmin(tx, actorId);
+    const old = await tx.olympiadEdition.findUnique({where:{id:input.id}});
+    if (old) {
+      const ownCreation = await tx.auditEvent.findFirst({where:{actorId, action:"EDITION_CREATED", objectType:"OlympiadEdition", objectId:old.id, editionId:old.id}});
+      if (!ownCreation || old.year !== input.year || !z.object({creationHash:z.literal(creationHash)}).safeParse(ownCreation.details).success) throw new OlympiadError("CONFLICT", "Идентификатор создания уже использован. Обновите список выпусков.");
+      return {id:old.id, year:old.year};
+    }
+    if (await tx.olympiadEdition.findUnique({where:{year:input.year}})) throw new OlympiadError("CONFLICT", "Выпуск этого года уже существует. Обновите список выпусков.");
+    const edition = await tx.olympiadEdition.create({data:{id:input.id,year:input.year,title:input.title}});
+    await tx.auditEvent.create({data:{actorId,action:"EDITION_CREATED",objectType:"OlympiadEdition",objectId:edition.id,editionId:edition.id,outcome:"SUCCESS",details:{year:edition.year,creationHash}}});
+    return {id:edition.id,year:edition.year};
+  });
+}
 const scheduleSchema = z.object({ editionId: z.uuid(), revision: z.int().nonnegative(),
   registrationOpensAt: z.iso.datetime({ offset: true }).transform(x => new Date(x)),
   registrationClosesAt: z.iso.datetime({ offset: true }).transform(x => new Date(x)),

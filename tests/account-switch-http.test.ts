@@ -176,7 +176,7 @@ test("cabinet navigation separates every section for all roles on mobile and des
   } finally { await browser.close(); await db.$disconnect(); }
 });
 
-test("technical admin sees empty-state guidance, then can assign a chief after edition provisioning", { timeout: 90000 }, async () => {
+test("technical admin creates edition through UI, retries lost response and configures schedule/chief without CLI", { timeout: 90000 }, async () => {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
   try {
@@ -189,9 +189,22 @@ test("technical admin sees empty-state guidance, then can assign a chief after e
     assert.equal((await context.request.post(`${base}/api/auth/sign-in/email`, { headers: { Origin: base }, data: { email: admin.email, password } })).status(), 200);
     await page.goto(`${base}/cabinet/admin`);
     await page.getByRole("heading", { name: "Пока нет выпусков олимпиады", exact: true }).waitFor({ timeout: 10000 });
-    assert.equal(await page.locator("form").count(), 0);
-    await promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/create-edition.ts", "2026", "Учебная СМО для проверки пустого кабинета"]);
-    await page.getByRole("button", { name: "Обновить список выпусков", exact: true }).click();
+    const createForm=page.getByRole("region",{name:"Создать выпуск олимпиады",exact:true});
+    await createForm.getByLabel("Год нового выпуска",{exact:true}).fill("2026");
+    await createForm.getByLabel("Название нового выпуска",{exact:true}).fill("Учебная СМО для проверки пустого кабинета");
+    assert.equal(await page.getByRole("button",{name:"Сохранить сроки",exact:true}).count(),0);
+    const anonymous=await browser.newContext();assert.equal((await anonymous.request.post(`${base}/api/admin/editions`,{headers:{Origin:base},data:{id:randomUUID(),year:2026,title:"Учебный выпуск",password,confirmed:true}})).status(),401);await anonymous.close();
+    const ids:string[]=[];
+    await page.route("**/api/admin/editions",async route=>{ids.push(route.request().postDataJSON().id);if(ids.length===1){const r=await route.fetch();assert.equal(r.status(),200);await r.dispose();await route.abort("failed");}else await route.continue();});
+    const submit=async()=>{await createForm.getByLabel("Текущий пароль для создания выпуска",{exact:true}).fill(password);await createForm.getByLabel("Подтверждаю создание нового выпуска",{exact:true}).check();await createForm.getByRole("button",{name:"Создать выпуск",exact:true}).click();};
+    await submit();await page.getByRole("status").filter({hasText:"Ответ не получен. Повторите эту же форму"}).waitFor();
+    assert.equal(await db.olympiadEdition.count({where:{year:2026}}),1);assert.equal(await createForm.getByLabel("Текущий пароль для создания выпуска",{exact:true}).inputValue(),"");
+    await submit();await page.unroute("**/api/admin/editions");assert.equal(ids.length,2);assert.equal(ids[0],ids[1]);
+    const schedule=page.locator("form").filter({has:page.getByLabel("Начало регистрации",{exact:true})});
+    await schedule.getByLabel("Начало регистрации",{exact:true}).fill("2026-11-01T10:00");await schedule.getByLabel("Окончание регистрации",{exact:true}).fill("2026-12-01T20:00");await schedule.getByLabel("Текущий пароль",{exact:true}).fill(password);
+    const [saved]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==="/api/admin/schedule"),schedule.getByRole("button",{name:"Сохранить сроки",exact:true}).click()]);assert.equal(saved.status(),200);
+    for(const width of [375,1280]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+    await createForm.getByLabel("Год нового выпуска",{exact:true}).focus();await page.keyboard.press("Tab");assert.equal(await createForm.getByLabel("Название нового выпуска",{exact:true}).evaluate(e=>e===document.activeElement),true);
     await page.getByRole("heading", { name: "2026 · Учебная СМО для проверки пустого кабинета", exact: true }).waitFor();
     assert.equal(await page.getByRole("heading", { name: "Пока нет выпусков олимпиады", exact: true }).count(), 0);
     const form = page.locator("form").filter({ has: page.getByLabel("Email главного", { exact: true }) });
@@ -204,5 +217,8 @@ test("technical admin sees empty-state guidance, then can assign a chief after e
     const chief = await db.user.findUniqueOrThrow({ where: { email } });
     assert.equal(chief.role, "CHIEF_ORGANIZER");
     assert.equal(await db.editionStaffGrant.count({ where: { userId: chief.id, revokedAt: null } }), 1);
+    const duplicate=await context.request.post(`${base}/api/admin/editions`,{headers:{Origin:base},data:{id:randomUUID(),year:2026,title:"Не заменять прежние настройки",password,confirmed:true}});assert.equal(duplicate.status(),409);
+    const created=await db.olympiadEdition.findUniqueOrThrow({where:{year:2026}});assert.equal(created.title,"Учебная СМО для проверки пустого кабинета");assert.equal(created.registrationOpensAt?.toISOString(),"2026-11-01T03:00:00.000Z");assert.equal(created.isCurrent,false);assert.equal(await db.auditEvent.count({where:{action:"EDITION_CREATED",objectId:created.id}}),1);
+
   } finally { await browser.close(); await db.$disconnect(); }
 });

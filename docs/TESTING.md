@@ -45,7 +45,7 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 | npm run test:ops | Managed backup и настоящий restore-drill; PostgreSQL/Docker, ClamAV, synthetic env |
 | npm run test:http | Семь auth/HTTP сценариев через dev :3100, Mailpit; предоставленная тестовая БД |
 | npm run test:registration | Два отдельных запуска registration-http: настоящий отказ keyring и SMTP, UI/rollback/сохранение аккаунта |
-| npm run test:account-switch | Chromium: auth/autofill/меню/пустой admin → CLI выпуска → назначение; временная БД |
+| npm run test:account-switch | Chromium: auth/autofill/меню/пустой admin → создание выпуска в UI с повтором потерянного ответа → сроки → назначение; временная БД |
 | npm run test:live | Две Chromium-сессии, удаление команды/входящие приглашения/профиль/явка/offline/отзыв, manual export 403/polling, каталоги и 375px; предоставленная тестовая БД |
 | npm run test:communications | Chromium/HTTP/SMTP, объявления/рассылки/nsuhw/результаты/дипломы/история; preview/apply 401/403/409 и потеря ответа после commit с UI-повтором; временная БД |
 | npm run test:load | Временная БД, optimized build/start, 5000 участников/год × 2, 200 сессий, 600 измеренных запросов |

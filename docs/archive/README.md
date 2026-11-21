@@ -45,3 +45,5 @@
 - [Восстановление форм CSV после отказов и потери ответа](investigations/IMPORT_FORM_RECOVERY.md).
 
 - [Завершение согласованного функционала](investigations/DEVELOPMENT_COMPLETION.md).
+
+- [Создание выпуска через кабинет администратора](investigations/ADMIN_EDITION_CREATION.md).

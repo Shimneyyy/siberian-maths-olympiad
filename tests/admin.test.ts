@@ -65,3 +65,31 @@ test("admin global schedule and chief lifecycle require verified email/password;
     await db.rateLimit.deleteMany({ where: { key: `admin-reauth:${admin.id}` } });
   }
 });
+
+test("only a verified reauthenticated technical admin creates editions; retries preserve settings, races deduplicate and audit failure rolls back",async()=>{
+ const {createAdminEdition}=await import("../src/lib/admin");
+ const password=`Synthetic-edition-${randomUUID()}`,users=[] as string[],ids=Array.from({length:4},()=>randomUUID());
+ const admin=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный администратор",emailVerified:true,role:"TECHNICAL_ADMIN"}});users.push(admin.id);
+ const input={id:ids[0],year:6900,title:"Учебный новый выпуск",password,confirmed:true};
+ const reset=()=>db.rateLimit.deleteMany({where:{key:`admin-reauth:${admin.id}`}});
+ try{
+  await db.account.create({data:{userId:admin.id,accountId:admin.id,providerId:"credential",password:await hashPassword(password)}});
+  for(const role of ["STUDENT","CHIEF_ORGANIZER","VENUE_ORGANIZER"] as const){const user=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный аккаунт",emailVerified:true,role}});users.push(user.id);await assert.rejects(createAdminEdition(db,user.id,input),AccessDenied);}
+  await db.user.update({where:{id:admin.id},data:{emailVerified:false}});await assert.rejects(createAdminEdition(db,admin.id,input),AccessDenied);await db.user.update({where:{id:admin.id},data:{emailVerified:true}});
+  await assert.rejects(createAdminEdition(db,admin.id,{...input,password:"wrong"}),AccessDenied);
+  for(const invalid of [{...input,confirmed:false},{...input,year:0},{...input,year:1.2},{...input,title:" "},{...input,actorId:admin.id}])await assert.rejects(createAdminEdition(db,admin.id,invalid));
+  assert.equal(await db.olympiadEdition.count({where:{year:6900}}),0);
+  await reset();const edition=await createAdminEdition(db,admin.id,input);
+  const before=await db.olympiadEdition.findUniqueOrThrow({where:{id:edition.id}});assert.equal(before.registrationOpensAt,null);assert.equal(before.registrationClosesAt,null);assert.equal(before.isCurrent,false);assert.equal(await db.editionStaffGrant.count({where:{editionId:edition.id}}),0);
+  await db.olympiadEdition.update({where:{id:edition.id},data:{title:"Изменено главным после создания",registrationManuallyClosed:true,revision:{increment:1}}});
+  await createAdminEdition(db,admin.id,input);const after=await db.olympiadEdition.findUniqueOrThrow({where:{id:edition.id}});assert.equal(after.title,"Изменено главным после создания");assert.equal(after.registrationManuallyClosed,true);assert.equal(after.revision,1);
+  await assert.rejects(createAdminEdition(db,admin.id,{...input,title:"Другое содержимое"}));await assert.rejects(createAdminEdition(db,admin.id,{...input,id:randomUUID()}));
+  assert.equal(await db.auditEvent.count({where:{actorId:admin.id,action:"EDITION_CREATED",objectId:edition.id}}),1);
+  await reset();const race=await Promise.allSettled([createAdminEdition(db,admin.id,{...input,id:ids[1],year:6901}),createAdminEdition(db,admin.id,{...input,id:ids[2],year:6901})]);assert.equal(race.filter(r=>r.status==="fulfilled").length,1);assert.equal(await db.olympiadEdition.count({where:{year:6901}}),1);
+  const broken=db.$extends({query:{auditEvent:{async create(){throw new Error("Synthetic audit unavailable");}}}});
+  await assert.rejects(createAdminEdition(broken as unknown as PrismaClient,admin.id,{...input,id:ids[3],year:6902}));assert.equal(await db.olympiadEdition.count({where:{year:6902}}),0);
+  const audit=JSON.stringify(await db.auditEvent.findMany({where:{actorId:admin.id}}));assert.ok(!audit.includes(password));assert.ok(!audit.includes(input.title));
+ }finally{
+  await db.auditEvent.deleteMany({where:{OR:[{actorId:{in:users}},{editionId:{in:ids}}]}});await db.olympiadEdition.deleteMany({where:{id:{in:ids}}});await reset();await db.user.deleteMany({where:{id:{in:users}}});
+ }
+});
