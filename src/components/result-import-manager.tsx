@@ -1,4 +1,5 @@
 "use client";
+import { RESULT_CSV_LIMIT } from "@/lib/result-csv-limits";
 import { clientFetch } from "@/lib/client-fetch";
 import { ImportResponseError, readImportResponse } from "@/lib/import-response";
 import { useRef, useState } from "react";
@@ -32,17 +33,17 @@ export function ResultImportManager({ editions, team = false }: { editions: { id
     return readImportResponse(response, "Не удалось выполнить импорт результатов");
   }
   return <section className="space-y-5">
-    {team ? <><p>Командные результаты: CSV UTF-8 до 512 КиБ. Столбцы: ID команды,Курсы участников,Задача 1,…,Сумма баллов,Приз. Название команды и Вуз необязательны; Приз тоже необязателен.</p><p>Используйте ID из списка команд ниже. Состав, ФИО, курсы и вузы фиксируются по заявкам при импорте. Курсы из CSV показаны для сверки, не меняют заявки. Изменение или удаление команды позже не переносит достижения другим людям.</p><p>После загрузки откройте управление результатами и отдельно опубликуйте нужную версию. Импорт сам ничего не публикует.</p></> : <>
-    <p>Только синтетические данные. Загрузка не публикует результаты и не отправляет письма. После загрузки проверьте сохранённые результаты и опубликуйте выбранную загрузку отдельно.</p>
+    {team ? <><p>Командные результаты: CSV UTF-8 до 2 МиБ. Столбцы: ID команды,Курсы участников,Задача 1,…,Сумма баллов,Приз. Название команды и Вуз необязательны; Приз тоже необязателен.</p><p>Используйте ID из списка команд ниже. Состав, ФИО, курсы и вузы фиксируются по заявкам при импорте. Курсы из CSV показаны для сверки, не меняют заявки. Изменение или удаление команды позже не переносит достижения другим людям.</p><p>После загрузки откройте управление результатами и отдельно опубликуйте нужную версию. Импорт сам ничего не публикует.</p></> : <>
+    <p>Загрузка не публикует результаты и не отправляет письма. После загрузки проверьте сохранённые результаты и опубликуйте выбранную загрузку отдельно.</p>
     <p>CSV UTF-8, разделитель — запятая. Шаблон: ФИО,Курс,Вуз,Логин,Задача 1,Задача 2,…,Сумма баллов. Приз — необязательный последний столбец. От 1 до 50 задач. Поддерживается и прежний формат Логин,…,Сумма,Приз. Логин должен совпадать точно, включая регистр; старый логин используется сразу после ввода участником. Только личные результаты.</p>
     <p>Результаты связываются по логину выбранного года. ФИО, курс и вуз из файла показаны для сверки; они не изменяют профиль и не заменяют логин при сопоставлении.</p>
     <p>Баллы — целые от 0 до 2147483647; пустое поле означает «не указан», а не ноль. Сумма загружается готовой, приз — текст до 200 символов. Все дубли участника отклоняются, существующие результаты не заменяются.</p>
     </>}
     <label>Год<select className={field} value={editionId} disabled={busy} onChange={e => { setEdition(e.target.value); clear(); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
     <label>Вид результатов<select className={field} value={kind} disabled={busy} onChange={e => { setKind(e.target.value); clear(); }}><option value="PRELIMINARY">Предварительные</option><option value="FINAL">Итоговые</option></select></label>
-    <label>Файл CSV (до 512 КиБ)<input className={field} ref={fileInput} type="file" accept=".csv,text/csv" disabled={!hydrated || busy} onChange={async e => {
+    <label>Файл CSV (до 2 МиБ)<input className={field} ref={fileInput} type="file" accept=".csv,text/csv" disabled={!hydrated || busy} onChange={async e => {
       const file = e.target.files?.[0]; clear(); setCsv(""); if (!file) return;
-      if (file.size > 524288) { setMessage("Файл больше 512 КиБ"); return; }
+      if (file.size > RESULT_CSV_LIMIT) { setMessage("Файл больше 2 МиБ"); return; }
       setBusy(true); try { setCsv(new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer())); } catch { setMessage("Не удалось прочитать UTF-8 CSV"); } finally { setBusy(false); }
     }} /></label>
     <Button disabled={!hydrated || busy || !editionId || !csv} onClick={async () => {

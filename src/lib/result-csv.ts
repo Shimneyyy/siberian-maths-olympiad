@@ -1,5 +1,6 @@
 import { OlympiadError } from "./olympiad-rules";
-export const RESULT_CSV_LIMIT = 524288;
+import { RESULT_CSV_LIMIT } from "./result-csv-limits";
+export { RESULT_CSV_LIMIT } from "./result-csv-limits";
 export type ResultRow = { line: number; login: string; fullName: string | null; course: string | null; university: string | null; scores: (number | null)[]; total: number | null; prize: string | null; error: string | null };
 const invalidIndividual = () => new OlympiadError("CONFLICT", "Неверная структура CSV. Нужны UTF-8 CSV, Логин, задачи по порядку и Сумма или Сумма баллов; ФИО, Курс, Вуз и Приз необязательны.");
 // Bounded RFC-style CSV reader. Broken framing rejects the file: guessing record

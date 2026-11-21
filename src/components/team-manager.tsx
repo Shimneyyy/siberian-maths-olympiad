@@ -19,7 +19,7 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }
   }
-  return <div className="space-y-6"><p>До трёх команд от вуза, до пяти участников включая капитана. Тренер — ФИО; капитан может указать себя. Только синтетические данные.</p>
+  return <div className="space-y-6"><p>До трёх команд от вуза, до пяти участников включая капитана. Тренер — ФИО; капитан может указать себя.</p>
     <Button variant="outline" disabled={busy || !hydrated} onClick={() => router.refresh()}>Обновить команды и приглашения</Button>
     {!editions.length && <p>Сначала зарегистрируйте участие на год олимпиады.</p>}
     {editions.map(e => <section key={e.editionId} className="space-y-3 rounded border border-border p-5"><h2>{e.title} · {e.year}</h2>

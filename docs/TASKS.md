@@ -10,6 +10,7 @@
 | --- | --- |
 | ADMIN-EDITION | Реализовано и проверено: форма/API TECHNICAL_ADMIN, пароль/подтверждение, безопасный повтор, запрет дублей, затем сроки и назначение главного. [ADR-014](decisions/ADR-014-admin-edition-creation.md), [проверки](archive/investigations/ADMIN_EDITION_CREATION.md). Новых миграций нет |
 | REMOVE-AV | Реализовано и проверено. Убраны ClamAV, обновление баз и зависимость загрузки дипломов от сигнатур. Решение пользователя от 21 ноября 2026. [ADR-015](decisions/ADR-015-remove-antivirus.md) |
+| CABINET-CLEANUP | Реализовано. Упрощены главная и кабинеты, закрыты прежние пользовательские операции, увеличен лимит CSV. [ADR-016](decisions/ADR-016-cabinet-cleanup.md) |
 
 ## Программная часть
 

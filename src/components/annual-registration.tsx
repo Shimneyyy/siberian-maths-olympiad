@@ -43,7 +43,7 @@ function EditionRegistration({ edition, view, enabled }: { edition: View["editio
       <p className="text-sm text-slate-600">После регистрации самостоятельно сменить площадку нельзя.</p>
       <Button disabled={busy || (format === "ONSITE" && !edition.venues.length)}>{busy ? "Сохраняем…" : `Буду участвовать в СМО ${edition.year}`}</Button>
       {message && <p role="status">{message}</p>}
-    </form> : edition.state === "OPEN" && <p className="text-sm text-slate-600">Учебная регистрация доступна только с вымышленными данными в тестовом режиме. Реальный сбор ПДн пока закрыт.</p>}
+    </form> : edition.state === "OPEN" && <p className="text-sm text-slate-600">Подача заявок сейчас недоступна.</p>}
   </article>;
 }
 export function AnnualRegistration({ view, enabled }: { view: View; enabled: boolean }) {

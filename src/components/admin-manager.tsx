@@ -18,12 +18,12 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
     try {
       const response = await clientFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
-      setMessage(response.ok ? (path === "/api/admin/chief" ? "Изменения сохранены. Новый главный устанавливает пароль через восстановление доступа, подтверждает email." : "Сроки регистрации сохранены.") : result.error || "Ошибка");
+      setMessage(response.ok ? (path === "/api/admin/chief" ? "Изменения сохранены. Новый главный организатор устанавливает пароль через восстановление доступа, подтверждает email." : "Сроки регистрации сохранены.") : result.error || "Ошибка");
       if (response.ok) router.refresh();
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }
   }
-  return <div className="space-y-6"><p>Только синтетические аккаунты @example.test. Время — Новосибирск (UTC+7). Доступ к участникам и внешним паролям эта роль не даёт.</p>
+  return <div className="space-y-6"><p>Время — Новосибирск (UTC+7). Доступ к участникам и внешним паролям эта роль не даёт.</p>
     {!editions.length && <section aria-labelledby="admin-empty-editions" className="space-y-3 rounded border border-border bg-white p-5">
       <h2 id="admin-empty-editions" className="text-xl font-semibold">Пока нет выпусков олимпиады</h2>
       <p>Главные организаторы и сроки регистрации назначаются для конкретного выпуска. Поэтому формы появятся после его создания.</p>
@@ -71,10 +71,10 @@ export function AdminManager({ editions }: { editions: Edition[] }) {
         await send("/api/admin/chief", { editionId: e.id, email: f.get("email"), name: f.get("name"), operation: f.get("operation"), password: f.get("password") });
         (form.elements.namedItem("password") as HTMLInputElement).value = "";
       }}>
-        <label>Синтетическое имя<input className={field} name="name" required minLength={3} maxLength={200} /></label>
-        <label>Email главного<input className={field} name="email" type="email" required /></label>
-        <label>Операция<select className={field} name="operation"><option value="assign">Назначить</option><option value="replace">Заменить всех главных этого года</option><option value="revoke">Отозвать назначение этого аккаунта</option></select></label>
-        <p>Отзыв сохраняет аккаунт, роль и историю, но удаляет сессии. Замена атомарно отзывает прежних главных выбранного года. Существующие студенты и организаторы площадок не повышаются.</p>
+        <label>ФИО главного организатора<input className={field} name="name" required minLength={3} maxLength={200} /></label>
+        <label>Email главного организатора<input className={field} name="email" type="email" required /></label>
+        <label>Операция<select className={field} name="operation"><option value="assign">Назначить</option><option value="replace">Заменить всех главных организаторов этого года</option><option value="revoke">Отозвать назначение этого аккаунта</option></select></label>
+        <p>Отзыв сохраняет аккаунт, роль и историю, но удаляет сессии. Замена атомарно отзывает прежних главных организаторов выбранного года. Существующие студенты и организаторы площадок не повышаются.</p>
         <label>Текущий пароль<input className={field} name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>
         <Button disabled={busy || !hydrated}>Выполнить операцию</Button>
       </form>

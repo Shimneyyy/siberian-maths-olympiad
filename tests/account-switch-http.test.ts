@@ -207,10 +207,10 @@ test("technical admin creates edition through UI, retries lost response and conf
     await createForm.getByLabel("Год нового выпуска",{exact:true}).focus();await page.keyboard.press("Tab");assert.equal(await createForm.getByLabel("Название нового выпуска",{exact:true}).evaluate(e=>e===document.activeElement),true);
     await page.getByRole("heading", { name: "2026 · Учебная СМО для проверки пустого кабинета", exact: true }).waitFor();
     assert.equal(await page.getByRole("heading", { name: "Пока нет выпусков олимпиады", exact: true }).count(), 0);
-    const form = page.locator("form").filter({ has: page.getByLabel("Email главного", { exact: true }) });
+    const form = page.locator("form").filter({ has: page.getByLabel("Email главного организатора", { exact: true }) });
     const email = `empty-chief-${randomUUID()}@example.test`;
-    await form.getByLabel("Синтетическое имя", { exact: true }).fill("Учебный главный нового выпуска");
-    await form.getByLabel("Email главного", { exact: true }).fill(email);
+    await form.getByLabel("ФИО главного организатора", { exact: true }).fill("Учебный главный нового выпуска");
+    await form.getByLabel("Email главного организатора", { exact: true }).fill(email);
     await form.getByLabel("Текущий пароль", { exact: true }).fill(password);
     const [assigned] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === "/api/admin/chief"), form.getByRole("button", { name: "Выполнить операцию", exact: true }).click()]);
     assert.equal(assigned.status(), 200);

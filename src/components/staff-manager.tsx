@@ -27,7 +27,7 @@ export function StaffManager({ venues, staff }: { venues: Venue[]; staff: Staff[
       const venue = venues.find((x) => x.id === form.get("venue")); if (!venue) return;
       await mutate("POST", { editionId: venue.editionId, editionVenueId: venue.id, email: form.get("email"), name: form.get("name") });
     }}>
-      <p className="text-sm text-slate-600">Учебный режим: только вымышленные имена и email @example.test. Новый организатор получает письмо для установки пароля, подтверждает email.</p>
+      <p className="text-sm text-slate-600">Новый организатор получает письмо для установки пароля, подтверждает email.</p>
       <label className="block">ФИО<input name="name" minLength={3} maxLength={200} required className="mt-2 block w-full rounded-lg border border-border p-2" /></label>
       <label className="block">Email<input name="email" type="email" required className="mt-2 block w-full rounded-lg border border-border p-2" /></label>
       <label className="block">Площадка<select name="venue" className="mt-2 block w-full rounded-lg border border-border p-2">{venues.map((v) => <option value={v.id} key={v.id}>{v.title}</option>)}</select></label>

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { AccessDenied, authorizeStaff } from "./access";
+import { AccessDenied } from "./access";
 import { AdminRateLimit } from "./admin";
 import { assertDemoRegistration } from "./registration-rules";
 import { OlympiadError } from "./olympiad-rules";
@@ -52,18 +52,14 @@ export async function editableParticipation(tx: PrismaClient | Tx, actorId: stri
   const p = await tx.participation.findFirst({ where: { id: participationId, editionId }, include: { edition: true, user: { select: { email: true } } } });
   if (!p || (requireRegistered && p.status !== "REGISTERED")) throw new AccessDenied("FORBIDDEN");
   const closed = p.edition.registrationManuallyClosed || (!!p.edition.registrationClosesAt && now >= p.edition.registrationClosesAt);
-  if (actor.role === "STUDENT") {
-    if (p.userId !== actorId || closed || !p.edition.registrationClosesAt) throw new AccessDenied("FORBIDDEN");
-  } else if (actor.role === "CHIEF_ORGANIZER" && closed) {
-    await authorizeStaff(tx, actorId, "registrations:edit", editionId);
-  } else throw new AccessDenied("FORBIDDEN");
+  if (actor.role !== "STUDENT" || p.userId !== actorId || closed || !p.edition.registrationClosesAt) throw new AccessDenied("FORBIDDEN");
   return { p, actor };
 }
 export async function correctionView(db: PrismaClient, actorId: string, editionId: string, participationId: string) {
   z.uuid().parse(editionId); z.uuid().parse(participationId);
-  const { p, actor } = await editableParticipation(db, actorId, editionId, participationId, new Date());
+  const { p } = await editableParticipation(db, actorId, editionId, participationId, new Date());
   return { fullName: p.fullName, universityId: p.universityId, courseId: p.courseId, revision: p.revision,
-    editionId, participationId, chief: actor.role === "CHIEF_ORGANIZER", ...await catalogs(db, p.universityId, p.courseId) };
+    editionId, participationId, ...await catalogs(db, p.universityId, p.courseId) };
 }
 export async function reauthenticateParticipationChief(db: PrismaClient, actorId: string, password: string) {
   const key = `correction-reauth:${actorId}`, now = BigInt(Date.now()), threshold = now - 60000n;
@@ -79,15 +75,12 @@ export async function reauthenticateParticipationChief(db: PrismaClient, actorId
 }
 export async function correctParticipation(db: PrismaClient, actorId: string, raw: unknown, clock: () => Date = () => new Date()) {
   const input = editSchema.parse(raw);
-  const { actor } = await editableParticipation(db, actorId, input.editionId, input.participationId, clock());
-  if (actor.role === "CHIEF_ORGANIZER") {
-    if (!input.reason || !input.password) throw new AccessDenied("FORBIDDEN");
-    await reauthenticateParticipationChief(db, actorId, input.password);
-  } else if (input.reason || input.password) throw new AccessDenied("FORBIDDEN");
+  await editableParticipation(db, actorId, input.editionId, input.participationId, clock());
+  if (input.reason || input.password) throw new AccessDenied("FORBIDDEN");
   return db.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "OlympiadEdition" WHERE "id" = ${input.editionId}::uuid FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "Participation" WHERE "id" = ${input.participationId}::uuid FOR UPDATE`;
-    const { p, actor } = await editableParticipation(tx, actorId, input.editionId, input.participationId, clock());
+    const { p } = await editableParticipation(tx, actorId, input.editionId, input.participationId, clock());
     assertDemoRegistration(p.user.email);
     if (p.revision !== input.revision) throw new OlympiadError("CONFLICT", "Регистрация уже изменена. Обновите страницу.");
     if (input.universityId !== p.universityId && await tx.teamMember.findUnique({ where: { participationId: p.id } })) throw new OlympiadError("CONFLICT", "Сначала выйдите из команды, затем меняйте вуз в заявке");
@@ -95,13 +88,9 @@ export async function correctParticipation(db: PrismaClient, actorId: string, ra
     await tx.participation.update({ where: { id: p.id }, data: { fullName: input.fullName, universityId: input.universityId, courseId: input.courseId,
       ...(input.universityId !== p.universityId ? { universityName: university.name, universityAbbreviation: university.abbreviation } : {}),
       ...(input.courseId !== p.courseId ? { courseLabel: course.label } : {}), revision: { increment: 1 } } });
-    // Own correction also updates the current profile; an organizer's historical correction does not.
-    if (actor.role === "STUDENT") {
-      await tx.studentProfile.update({ where: { userId: actorId }, data: { fullName: input.fullName, universityId: input.universityId, courseId: input.courseId, revision: { increment: 1 } } });
-      await tx.user.update({ where: { id: actorId }, data: { name: input.fullName } });
-    }
-    const correction = input.reason ? await tx.participationCorrection.create({ data: { participationId: p.id, actorId, reason: input.reason } }) : null;
-    await tx.auditEvent.create({ data: { actorId, action: "PARTICIPATION_CORRECTED", objectType: "Participation", objectId: p.id, editionId: p.editionId, outcome: "SUCCESS", details: { revision: p.revision + 1, ...(correction ? { correctionId: correction.id } : {}) } } });
+    await tx.studentProfile.update({ where: { userId: actorId }, data: { fullName: input.fullName, universityId: input.universityId, courseId: input.courseId, revision: { increment: 1 } } });
+    await tx.user.update({ where: { id: actorId }, data: { name: input.fullName } });
+    await tx.auditEvent.create({ data: { actorId, action: "PARTICIPATION_CORRECTED", objectType: "Participation", objectId: p.id, editionId: p.editionId, outcome: "SUCCESS", details: { revision: p.revision + 1 } } });
     return { status: "ok" };
   });
 }

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
-import { AdminRateLimit, saveRegistrationWindow } from "../src/lib/admin";
+import { saveRegistrationWindow } from "../src/lib/admin";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { PrismaPg } from "../src/lib/pg-adapter";
 import { randomUUID, createHash } from "node:crypto";
@@ -206,7 +206,7 @@ test("current profile edits cannot alter annual snapshots, email or role and rej
   } finally { await clean(f); }
 });
 
-test("annual correction enforces deadline/manual close, owner, chief reason/password and preserves other years", async () => {
+test("annual correction enforces deadline/manual close, owner, denial for chief and preserves other years", async () => {
   const { correctParticipation, correctionView } = await import("../src/lib/corrections");
   const f = await fixture(6416);
   const password = "Synthetic-correction-password";
@@ -230,15 +230,9 @@ test("annual correction enforces deadline/manual close, owner, chief reason/pass
     await assert.rejects(correctParticipation(db, f.a.id, { ...input, revision: 1 }, () => opens), AccessDenied);
     await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 1 }, () => opens), AccessDenied);
     await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 1, reason: "Учебная ошибка", password: "wrong" }, () => opens), AccessDenied);
-    const profileBefore = await db.studentProfile.findUniqueOrThrow({ where: { userId: f.a.id } });
-    await correctParticipation(db, f.chief.id, { ...input, revision: 1, fullName: "Учебная правка организатора", reason: "Учебная причина", password }, () => opens);
-    assert.deepEqual(await db.studentProfile.findUniqueOrThrow({ where: { userId: f.a.id } }), profileBefore);
-    assert.deepEqual(await db.participation.findUniqueOrThrow({ where: { id: next.id } }), next);
-    assert.equal(await db.participationCorrection.count({ where: { participationId: first.id } }), 1);
-    const audit = await db.auditEvent.findMany({ where: { action: "PARTICIPATION_CORRECTED", editionId: f.first.id } });
-    assert.equal(audit.length, 2); assert.ok(!JSON.stringify(audit).includes("Учебная причина")); assert.ok(!JSON.stringify(audit).includes(input.fullName));
-    for (let i=0;i<3;i++) await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 2, reason: "Учебная ошибка", password: "wrong" }, () => opens), AccessDenied);
-    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 2, reason: "Учебная ошибка", password }, () => opens), AdminRateLimit);
+    await assert.rejects(correctParticipation(db, f.chief.id, { ...input, revision: 1, reason: "Причина", password }, () => opens), AccessDenied);
+    assert.deepEqual(await db.participation.findUniqueOrThrow({ where: { id: first.id } }), changed);
+    assert.equal(await db.participationCorrection.count({ where: { participationId: first.id } }), 0);
 
   } finally { await clean(f); }
 });

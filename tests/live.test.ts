@@ -143,7 +143,7 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     for(const width of [375,1280]){await catalogPage.setViewportSize({width,height:900});assert.ok(await catalogPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Catalog fits viewport ${width}`);}
     await catalogPage.close();
     // Layout smoke coverage across available chief/student forms; no mutations here.
-    for(const [context,paths] of [[editor,["organization","announcements","mail","nsuhw-export","nsuhw-import","results-import","diplomas","catalogs"]],[captainContext,["profile","olympiad","teams","nsuhw","results","history","privacy"]]] as const){
+    for(const [context,paths] of [[editor,["organization","announcements","mail","nsuhw-export","results-import","diplomas","catalogs"]],[captainContext,["profile","olympiad","teams","nsuhw","results","history"]]] as const){
       const formPage=await context.newPage();
       for(const path of paths){
         await formPage.goto(`${base}/cabinet/${path}`);

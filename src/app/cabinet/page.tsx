@@ -33,19 +33,17 @@ export default async function Cabinet() {
       ["/cabinet/nsuhw-export", "Передача аккаунтов в nsuhw"],
       ["/cabinet/results-import", "Загрузка личных результатов"],
       ["/cabinet/team-results-import", "Загрузка командных результатов"],
-      ["/cabinet/nsuhw-import", "Импорт готовых аккаунтов nsuhw"],
     ] : []),
     ...(["STUDENT", "CHIEF_ORGANIZER", "VENUE_ORGANIZER"].includes(user.role ?? "") ? [
       ["/cabinet/results", "Результаты"],
     ] : []),
   ];
-  return <main className="mx-auto max-w-3xl px-6 py-12">
-    <h1 className="text-3xl font-semibold">Личный кабинет</h1>
+  return <main className="mx-auto max-w-5xl px-6 py-12">
+    <header className="cabinet-hero"><h1 className="text-3xl font-semibold">Личный кабинет</h1>
     <p className="mt-4 break-words">{user.name}</p>
-    <p className="mt-2 text-slate-600">{roles[user.role as keyof typeof roles]}</p>
-    <p className="mt-6">Учебная версия. Используйте только вымышленные данные. Регистрация, история, команды и списки доступны по вашей роли.</p>
+    <p className="mt-2 text-slate-600">{roles[user.role as keyof typeof roles]}</p></header>
     <nav aria-label="Разделы кабинета" className="mt-6 grid gap-3 text-primary sm:grid-cols-2">
-      {sections.map(([href, title]) => <Link key={href} href={href} className="rounded-lg border border-border bg-white p-3 break-words hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary">{title}</Link>)}
+      {sections.map(([href, title]) => <Link key={href} href={href} className="section-link"><span>{title}</span><span aria-hidden="true">→</span></Link>)}
     </nav>
     <AccountControls />
     {user.role === "CHIEF_ORGANIZER" && <StaffManager venues={venues.map((v) => ({ id: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` }))} staff={venues.flatMap((v) => v.assignments.map((a) => ({ userId: a.userId, name: a.user.name, venueId: v.id, editionId: v.editionId, title: `${v.edition.year} · ${v.venue.name}` })))} />}

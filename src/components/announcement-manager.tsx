@@ -18,7 +18,7 @@ export function AnnouncementManager({ editions, chief }: { editions: Edition[]; 
   async function action(fn: () => Promise<void>) { setBusy(true); setMessage(""); try { await fn(); } catch (e) { setItems([]); setMessage(e instanceof Error ? e.message : "Ошибка"); } finally { setBusy(false); } }
   const field = "block w-full rounded border p-2";
   return <section className="space-y-6">
-    <p>Учебная версия. Только синтетические данные. Опубликованный текст неизменяем; исправление публикуется новым объявлением.</p>
+    <p>Опубликованный текст неизменяем; исправление публикуется новым объявлением.</p>
     <label>Год<select className={field} value={editionId} disabled={busy} onChange={e => { setEdition(e.target.value); setItems([]); setDraft(null); setMessage(""); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
     <Button disabled={!hydrated || busy || !editionId} onClick={() => action(load)}>Показать объявления</Button>
     {chief && <form key={`${editionId}:${draft?.id ?? "new"}`} method="post" className="space-y-4" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); const element = e.currentTarget; action(async () => {

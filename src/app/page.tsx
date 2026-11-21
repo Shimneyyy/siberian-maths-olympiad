@@ -1,35 +1,22 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-const roles = [
-  ["Студент", "Регистрация на олимпиаду, команда, результаты и дипломы."],
-  ["Главный организатор", "Управление олимпиадой, площадками и публикациями."],
-  ["Организатор площадки", "Список участников своей площадки и учёт явки."],
-];
 export default function Home() {
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 md:px-12">
+    <div className="mx-auto max-w-6xl px-5 py-8 md:px-12">
       <header className="flex items-center gap-3 border-b border-border pb-6">
-        <span aria-hidden="true" className="grid size-11 place-items-center rounded-xl bg-primary text-xl font-bold text-white">∑</span>
-        <div><p className="font-semibold">Сибирская математическая олимпиада</p><p className="text-sm text-slate-600">Личный кабинет</p></div>
+        <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-xl font-bold text-white">∑</span>
+        <p className="font-semibold">Сибирская математическая олимпиада</p>
       </header>
-      <main id="main" className="py-16 md:py-24">
-        <p className="mb-5 text-sm font-semibold tracking-widest text-primary">СМО · УЧАСТНИКАМ И ОРГАНИЗАТОРАМ</p>
-        <h1 className="max-w-3xl text-4xl font-semibold leading-tight md:text-6xl">Всё об участии<br />в одном кабинете</h1>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">Площадки, команды, объявления и итоги олимпиады. Решения задач и апелляции — на nsuhw.ru.</p>
-        <div className="mt-8 flex flex-wrap items-center gap-4">
-          <Button asChild><a href="https://nsuhw.ru" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Перейти на nsuhw.ru ↗</a></Button>
-          <p className="text-sm text-slate-600">Сервис проверки работ</p>
-        </div>
-        <aside className="mt-12 rounded-xl border border-border bg-white p-5" aria-label="Состояние сервиса">
-          <p className="font-medium">Личный кабинет в учебном режиме</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Доступны вход и настройка безопасности. Учебная регистрация принимает только вымышленные данные; сбор реальных ПДн не открыт.</p>
-        <nav aria-label="Личный кабинет" className="mt-4 flex gap-4 text-sm text-primary"><Link href="/login">Войти</Link><Link href="/register">Учебная регистрация</Link></nav></aside>
-        <section aria-label="Возможности будущего кабинета" className="mt-8 grid gap-5 md:grid-cols-3">
-          {roles.map(([title, description]) => <article key={title} className="rounded-xl border border-border bg-white p-6"><h2 className="text-lg font-semibold">{title}</h2><p className="mt-3 leading-7 text-slate-600">{description}</p></article>)}
-        </section>
+      <main id="main" className="home-hero mt-8 rounded-3xl border border-border px-6 py-12 md:px-14 md:py-20">
+        <h1 className="max-w-3xl text-4xl font-semibold leading-tight md:text-6xl">Личный кабинет олимпиады</h1>
+        <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">Регистрация, команды, объявления, результаты и дипломы.</p>
+        <nav aria-label="Личный кабинет" className="mt-8 flex flex-wrap gap-3">
+          <Button asChild><Link href="/login">Войти</Link></Button>
+          <Button asChild variant="outline"><Link href="/register">Зарегистрироваться</Link></Button>
+        </nav>
+        <a className="mt-8 inline-flex font-medium text-primary underline underline-offset-4" href="https://nsuhw.ru" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Задачи и апелляции на nsuhw.ru ↗</a>
       </main>
-      <footer className="border-t border-border py-6 text-sm text-slate-600">Сибирская математическая олимпиада</footer>
     </div>
   );
 }

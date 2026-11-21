@@ -47,7 +47,10 @@ test("E07 CSV preserves quoted text, zero/null and rejects malformed framing, un
   const parsed = parseResultCsv('\uFEFFЛогин,Задача 1,Сумма,Приз\r\nlegacy,0,,"Приз, \"\"учебный\"\"\nтекст"\r\n');
   assert.equal(parsed.rows.length, 1); assert.deepEqual(parsed.rows[0].scores, [0]); assert.equal(parsed.rows[0].total, null); assert.equal(parsed.rows[0].prize, 'Приз, "учебный"\nтекст');
   for (const value of ["-1", "1.5", "1e2", "2147483648", "=1", "NaN"]) assert.equal(parseResultCsv(`Логин,Задача 1,Сумма,Приз\nx,${value},,`).rows[0].error, "INVALID_SCORE");
-  for (const csv of ['Логин,Задача 1,Сумма,Приз\nx,"1,,', 'Логин,Задача 2,Сумма,Приз\nx,1,,', 'x'.repeat(524289), 'Логин,Задача 1,Сумма,Приз\nx,"1"x,,']) assert.throws(() => parseResultCsv(csv));
+  for (const csv of ['Логин,Задача 1,Сумма,Приз\nx,"1,,', 'Логин,Задача 2,Сумма,Приз\nx,1,,', 'x'.repeat(2 * 1024 * 1024 + 1), 'Логин,Задача 1,Сумма,Приз\nx,"1"x,,']) assert.throws(() => parseResultCsv(csv));
+  const largeCsv = "Логин,Задача 1,Сумма,Приз\n" + Array.from({length: 3000}, (_, i) => `participant${i},1,1,${"я".repeat(100)}`).join("\n");
+  assert.ok(Buffer.byteLength(largeCsv) > 512 * 1024);
+  assert.equal(parseResultCsv(largeCsv).rows.length, 3000);
 });
 test("E07 partial apply matches exact self-reported logins in year, persists scores and imported sum without publication", async () => {
   const f = await fixture(), [a,b,c,foreign,pending] = f.people;

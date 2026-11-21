@@ -1,5 +1,7 @@
 # ADR-002: ежегодные снимки, изменения и команды
 
+Пользовательские операции уточнены в [ADR-016](ADR-016-cabinet-cleanup.md).
+
 Статус: принято; удаление команды и входящие приглашения уточнены
 [ADR-008](ADR-008-team-deletion-and-invitations.md) от 20 ноября 2026. Источник: Q03–Q07/Q11 от 6 ноября 2026 и
 последующие C09/C10/C11, D01/D02 в [исходном журнале](https://github.com/Shimneyyy/siberian-maths-olympiad/blob/a921c0981bc041336760c309e1dd527c61202140/docs/DECISIONS.md#L38).

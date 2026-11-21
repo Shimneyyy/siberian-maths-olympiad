@@ -23,7 +23,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
   const [firstNameLatin,setFirstNameLatin] = useState(""), [lastNameLatin,setLastNameLatin] = useState("");
   const preview=nsuhwLoginPreview({firstNameLatin,lastNameLatin});
   const [email, setEmail] = useState("");
-  const titles = { login: "Вход в личный кабинет", register: "Учебная регистрация", verify: "Подтверждение email", forgot: "Восстановление доступа", reset: "Новый пароль" };
+  const titles = { login: "Вход в личный кабинет", register: "Регистрация", verify: "Подтверждение email", forgot: "Восстановление доступа", reset: "Новый пароль" };
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
     const form = event.currentTarget;
@@ -77,11 +77,10 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
     finally { setBusy(false); }
   }
   const field = "mt-2 w-full rounded-lg border border-border bg-white px-3 py-3 focus:outline-2 focus:outline-primary";
-  return <main className="mx-auto max-w-lg px-6 py-12">
+  return <main className="auth-shell mx-auto max-w-lg px-6 py-12">
     <Link href="/" className="text-sm text-primary">← Сибирская математическая олимпиада</Link>
     <h1 className="mt-8 text-3xl font-semibold">{titles[mode]}</h1>
-    <p className="mt-4 text-sm leading-6 text-slate-600">Учебная версия: используйте только вымышленные данные. Реальные персональные данные пока не принимаются.</p>
-    <form ref={formRef} method="post" onSubmit={submit} className="mt-6 space-y-5">
+    <form ref={formRef} method="post" onSubmit={submit} className="mt-6 space-y-5 rounded-2xl border border-border bg-white p-5 sm:p-7">
       {mode === "register" && <><label className="block">ФИО<input required name="name" minLength={3} maxLength={200} autoComplete="name" className={field} /></label>
         <label className="block">Университет<select required name="universityId" className={field} defaultValue=""><option value="" disabled>Выберите вуз</option>{universities.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}
@@ -95,7 +94,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
         <label className="block">Фамилия латиницей для логина<input name="lastNameLatin" value={lastNameLatin} onChange={e=>setLastNameLatin(e.target.value)} required pattern="[A-Za-z]+" maxLength={80} autoComplete="off" className={field}/></label>
         <p role="status">{preview?`Предварительный логин: ${preview}`:"Введите имя и фамилию латиницей, чтобы увидеть предварительный логин"}</p><p className="text-sm">При регистрации ЛК назначит логин, при совпадении добавит индекс 2, 3 и далее. Данные будут подготовлены для ручного переноса в nsuhw — аккаунт на внешнем сайте ещё не создан. Пароль nsuhw станет доступен в ЛК после подтверждения создания главным организатором.</p></>}
       </fieldset>}
-      {mode === "register" && <label className="flex gap-3 text-sm leading-6"><input name="demoConsent" type="checkbox" required className="mt-1 size-5 shrink-0" />Использую только вымышленные данные. Это учебная заглушка, а не юридическое согласие на обработку реальных ПДн.</label>}
+      {mode === "register" && <label className="flex gap-3 text-sm leading-6"><input name="demoConsent" type="checkbox" required className="mt-1 size-5 shrink-0" />Использую только вымышленные данные.</label>}
       <Button disabled={busy || !hydrated} type="submit">{busy ? "Подождите…" : "Продолжить"}</Button>
       {message && <p role="status" className="rounded-lg border border-border bg-white p-4 text-sm">{message}</p>}
     </form>

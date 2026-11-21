@@ -15,7 +15,7 @@ export function MailManager({ editions }: { editions: { id: string; year: number
     const result = await response.json(); if (!response.ok) throw new Error(result.error || "Ошибка рассылки"); return result;
   }
   async function load() { setBatches(await api("/search", { editionId })); }
-  return <section className="space-y-4"><p>Только синтетические данные. Не вставляйте пароли или персональные сведения в шаблон. Разрешены {'{{name}}, {{year}}, {{university}}, {{team}}, {{venue}}'}. Письмо отправляется обычным текстом.</p>
+  return <section className="space-y-4"><p>Не вставляйте пароли или персональные сведения в шаблон. Разрешены {'{{name}}, {{year}}, {{university}}, {{team}}, {{venue}}'}. Письмо отправляется обычным текстом.</p>
     <label>Год<select className={field} value={editionId} disabled={busy} onChange={e => { setEdition(e.target.value); setRepeat(null); setBatches([]); pending.current = null; setMessage(""); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
     <Button disabled={!hydrated || busy || !editionId} onClick={async () => { setBusy(true); try { await load(); } catch { setBatches([]); setMessage("Не удалось загрузить рассылки"); } finally { setBusy(false); } }}>Показать рассылки</Button>
     <form key={`${editionId}:${repeat?.id ?? "new"}:${formVersion}`} method="post" className="space-y-4" onSubmit={async e => {

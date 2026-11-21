@@ -24,3 +24,33 @@ label { line-height: 1.5; }
   main { padding-inline: 1rem; }
   button { white-space: normal; }
 }
+
+.home-hero, .cabinet-hero {
+  background: linear-gradient(120deg, #fff 35%, #e8efff);
+}
+.cabinet-hero { border: 1px solid var(--border); border-radius: 1.25rem; padding: clamp(1rem, 4vw, 2rem); }
+.cabinet-shell h1 { font-size: clamp(1.6rem, 4vw, 2.25rem); font-weight: 700; letter-spacing: -.025em; }
+.cabinet-shell h2 { font-weight: 650; }
+.cabinet-shell a { color: var(--primary); text-decoration: underline; text-underline-offset: .2em; }
+.cabinet-shell a:hover { color: #182e81; }
+.cabinet-shell a.section-link,
+.cabinet-shell a[href="/cabinet"],
+.cabinet-shell nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .65rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  background: white;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cabinet-shell a.section-link { justify-content: space-between; padding: .9rem 1rem; }
+.cabinet-shell a.section-link:hover,
+.cabinet-shell a[href="/cabinet"]:hover,
+.cabinet-shell nav a:hover { background: #edf2ff; border-color: #a5b8ef; }
+
+.auth-shell a { color: var(--primary); text-decoration: underline; text-underline-offset: .2em; }
+.auth-shell nav a { padding: .3rem 0; font-weight: 600; }
+.auth-shell a:hover { color: #182e81; }

@@ -217,7 +217,7 @@ test("captain cancellation atomically dissolves only that team and leaves the ot
   assert.ok(!JSON.stringify(audit).includes(f.users[1].name));
 });
 
-test("manual closure blocks student cancellation; assigned chief needs verified email, reason and password afterwards", async () => {
+test("manual closure blocks student cancellation; assigned chief cannot cancel after closure", async () => {
   const { cancelParticipation } = await import("../src/lib/cancellation");
   const data = { editionId: f.edition.id, participationId: f.participations[0].id, revision: 0, confirmed: true };
   const chief = { ...data, reason: "Учебная причина отмены", password: "Synthetic-cancellation-password" };
@@ -229,12 +229,8 @@ test("manual closure blocks student cancellation; assigned chief needs verified 
   await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: false } });
   try { await assert.rejects(cancelParticipation(db, f.chief.id, chief), AccessDenied); }
   finally { await db.user.update({ where: { id: f.chief.id }, data: { emailVerified: true } }); }
-  await cancelParticipation(db, f.chief.id, chief);
-  assert.equal((await db.participation.findUniqueOrThrow({ where: { id: data.participationId } })).status, "CANCELLED");
-  const audit = await db.auditEvent.findFirstOrThrow({ where: { actorId: f.chief.id, objectId: data.participationId, action: "PARTICIPATION_CANCELLED" } });
-  assert.ok(!JSON.stringify(audit).includes(chief.reason)); assert.ok(!JSON.stringify(audit).includes(chief.password));
-  const reasonId = (audit.details as { correctionId: string }).correctionId;
-  assert.equal((await db.participationCorrection.findUniqueOrThrow({ where: { id: reasonId } })).reason, chief.reason);
+  await assert.rejects(cancelParticipation(db, f.chief.id, chief), AccessDenied);
+  assert.equal((await db.participation.findUniqueOrThrow({ where: { id: data.participationId } })).status, "REGISTERED");
 });
 
 test("captain can receive another team's invitation, dissolve own team and join without cancelling participation", async () => {

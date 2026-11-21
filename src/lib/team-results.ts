@@ -1,3 +1,4 @@
+import { RESULT_CSV_LIMIT } from "./result-csv-limits";
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -6,7 +7,7 @@ import { resultChief } from "./result-documents";
 import { reauthenticateParticipationChief } from "./corrections";
 import { OlympiadError } from "./olympiad-rules";
 const scope=z.object({editionId:z.uuid()}).strict();
-const source=scope.extend({kind:z.enum(["PRELIMINARY","FINAL"]),csv:z.string().max(524288)}).strict();
+const source=scope.extend({kind:z.enum(["PRELIMINARY","FINAL"]),csv:z.string().max(RESULT_CSV_LIMIT)}).strict();
 function fingerprint(value:unknown){const key=process.env.BETTER_AUTH_SECRET;if(!key)throw new Error("Auth configuration required");return createHmac("sha256",key).update("team-results-v1\0").update(JSON.stringify(value)).digest("hex");}
 async function inspect(tx:Prisma.TransactionClient,input:z.infer<typeof source>){
  const parsed=parseResultCsv(input.csv,"team");
