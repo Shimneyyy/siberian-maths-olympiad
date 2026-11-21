@@ -4,6 +4,14 @@ import { PrismaPg } from "../src/lib/pg-adapter";
 import { addDemoKeyVersion,loadDemoKeyProtector } from "../src/lib/external-secrets/local-keys";
 import { rewrapPreparedExternalAccounts,initializeDemoKeyringForDatabase } from "../src/lib/external-secrets/storage";
 async function main(){
+ if(process.platform === "win32") throw new Error("Unsupported platform");
+ if(process.env.NODE_ENV === "production" || process.env.DEMO_REGISTRATION !== "true"){
+  console.error(process.env.NODE_ENV === "production"
+   ? "Операции с локальными ключами nsuhw недоступны при NODE_ENV=production."
+   : "Включите DEMO_REGISTRATION=true в .env для учебной среды или передайте его при запуске команды из WSL.");
+  process.exitCode=1;
+  return;
+ }
  const operation=process.argv[2];
  if(operation==="init"){
   const db=new PrismaClient({adapter:new PrismaPg({connectionString:process.env.DATABASE_URL})});

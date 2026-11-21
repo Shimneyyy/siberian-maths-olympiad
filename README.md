@@ -30,7 +30,7 @@ docker compose up -d --wait
 npm run db:generate
 npm run db:migrate
 npm run db:seed
-npm run nsuhw:keys -- init
+DEMO_REGISTRATION=true npm run nsuhw:keys -- init
 npm run dev
 ```
 
