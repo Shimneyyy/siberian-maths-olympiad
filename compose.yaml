@@ -20,31 +20,6 @@ services:
     ports:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
-  clamav:
-    profiles: [files]
-    image: clamav/clamav@sha256:6d87c712e3391e13c1ba6e05dfb074d4b1ddb5a6834b23bb9da990d2a4ef042a
-    entrypoint: [clamd, --config-file=/etc/clamav/clamd-demo.conf]
-    ports:
-      - "127.0.0.1:3310:3310"
-    volumes:
-      - ./infra/clamd-demo.conf:/etc/clamav/clamd-demo.conf:ro
-      - clamav_data:/var/lib/clamav
-    healthcheck:
-      test: [CMD, clamdscan, --config-file=/etc/clamav/clamd-demo.conf, --ping=1]
-      interval: 3s
-      timeout: 5s
-      retries: 40
-    mem_limit: 2g
-  clamav-updater:
-    profiles: [files]
-    image: clamav/clamav@sha256:6d87c712e3391e13c1ba6e05dfb074d4b1ddb5a6834b23bb9da990d2a4ef042a
-    entrypoint: [freshclam, --daemon, --foreground, --stdout, --checks=12]
-    healthcheck:
-      disable: true
-    volumes:
-      - clamav_data:/var/lib/clamav
-    restart: unless-stopped
-    mem_limit: 256m
   pdf-inspector:
     profiles: [files]
     build:
@@ -86,4 +61,3 @@ networks:
     internal: true
 volumes:
   postgres_data:
-  clamav_data:

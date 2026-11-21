@@ -38,7 +38,7 @@ async function fixture(){
  const reset=()=>db.rateLimit.deleteMany({where:{key:{contains:chief.id}}});
  return {edition,foreign,chief,people,root,store,scope,prepare,view,selection,apply,publish,reset};
 }
-test("E10 real PDF/AV ZIP preview assigns only year owners; apply and publication are separate, private and idempotent",async()=>{
+test("E10 real PDF ZIP preview assigns only year owners; apply and publication are separate, private and idempotent",async()=>{
  const f=await fixture(),bytes=await pdf();
  const upload={...f.scope,id:randomUUID(),password,confirmed:true,bytes:await archive([[`${f.people[0].login}.pdf`,bytes],[`${f.people[2].login}.pdf`,bytes],["unknown.pdf",bytes],["invalid.pdf",Buffer.from("%PDF-1.7\ninvalid\n%%EOF")]])};
  const attempts=await Promise.allSettled([prepareDiplomaBatch(db,f.chief.id,upload,f.store),prepareDiplomaBatch(db,f.chief.id,upload,f.store)]);

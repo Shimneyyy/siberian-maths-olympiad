@@ -6,7 +6,6 @@ import { BodyTooLarge, readJsonBody } from "./http-body";
 import { OlympiadError } from "./olympiad-rules";
 import { UnsafeZip } from "./private-files/zip-preview";
 import { PdfInspectorUnavailable } from "./private-files/pdf-inspection";
-import { ScannerUnavailable } from "./private-files/clamav";
 import { InvalidMailTemplate } from "./mail-template";
 import { AdminRateLimit } from "./admin";
 import { Prisma } from "@prisma/client";
@@ -28,7 +27,7 @@ export async function executeOlympiadRequest(request: Request, deps: RequestDepe
     return Response.json(result, { headers });
   } catch (error) {
     if (error instanceof UnsafeZip) return Response.json({ error: "ZIP повреждён, зашифрован или превышает ограничения. Проверьте архив и размеры файлов." }, { status: 400, headers });
-    if (error instanceof PdfInspectorUnavailable || error instanceof ScannerUnavailable) return Response.json({ error: "Проверка файлов временно недоступна. Повторите позже." }, { status: 503, headers });
+    if (error instanceof PdfInspectorUnavailable) return Response.json({ error: "Проверка файлов временно недоступна. Повторите позже." }, { status: 503, headers });
     if (error instanceof InvalidMailTemplate) return Response.json({ error: "Проверьте разрешённые переменные шаблона" }, { status: 400, headers });
     if (error instanceof AdminRateLimit) return Response.json({ error: "Слишком много попыток" }, { status: 429, headers });
     if (error instanceof UploadReadTimeout) return Response.json({error:"Загрузка заняла слишком много времени. Повторите отправку."},{status:408,headers});

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { scanWithClamav } from "./clamav";
 export class PdfRejected extends Error { constructor() { super("DIPLOMA_PDF_REJECTED"); } }
 export class PdfInspectorUnavailable extends Error { constructor() { super("PDF_INSPECTOR_UNAVAILABLE"); } }
 export async function inspectPassivePdf(input: Uint8Array, mime: string) {
@@ -16,13 +15,4 @@ export async function inspectPassivePdf(input: Uint8Array, mime: string) {
     if(!response.ok||result.valid!==true||!Number.isInteger(result.pages)||result.pages<1||result.pages>100)throw new PdfInspectorUnavailable();
     return {pages:result.pages as number,sha256:createHash("sha256").update(bytes).digest("hex")};
   }catch(error){if(error instanceof PdfRejected)throw error;throw new PdfInspectorUnavailable();}
-}
-// Both stages operate on the exact same private copy; a CLEAN answer alone cannot
-// bypass structural inspection, and caller mutation cannot change the scanned PDF.
-export async function inspectDiplomaPdf(input: Uint8Array, mime: string) {
-  if (!input.byteLength || input.byteLength > 10 * 1024 * 1024) throw new PdfRejected();
-  const bytes = Buffer.from(input);
-  const structure = await inspectPassivePdf(bytes, mime);
-  if (await scanWithClamav(bytes) !== "CLEAN") throw new PdfRejected();
-  return { ...structure, scan: "CLEAN" as const };
 }

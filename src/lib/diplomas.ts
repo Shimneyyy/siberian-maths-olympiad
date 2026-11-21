@@ -8,7 +8,7 @@ import { OlympiadError } from "./olympiad-rules";
 import { DemoQuarantine } from "./private-files/quarantine";
 import { previewDiplomaZip, DIPLOMA_ZIP_LIMITS } from "./private-files/zip-preview";
 import { readVerifiedZipEntry } from "./private-files/zip-entry";
-import { inspectDiplomaPdf, PdfRejected } from "./private-files/pdf-inspection";
+import { inspectPassivePdf, PdfRejected } from "./private-files/pdf-inspection";
 import { enqueueEmail } from "./outbox";
 const scope=z.object({editionId:z.uuid()}).strict();
 const batchSchema=scope.extend({batchId:z.uuid()}).strict();
@@ -45,7 +45,7 @@ async function prepareDiplomaBatchInternal(db:PrismaClient,actorId:string,raw:un
    const item:Prisma.DiplomaItemCreateManyInput={id:randomUUID(),batchId:input.id,editionId:input.editionId,ordinal:row.index,fileName:row.fileName.length>258?row.fileName.slice(0,258)+"…":row.fileName,participationId,error};
    if(!error){
     const bytes=await readVerifiedZipEntry(buffer,row.index,row.sha256!);
-    try{const inspected=await inspectDiplomaPdf(bytes,"application/pdf");const file=await store.put(bytes);created.push(file);Object.assign(item,{fileKey:file.key,fileHash:inspected.sha256,size:file.size,pages:inspected.pages,inspectedAt:new Date()});}
+    try{const inspected=await inspectPassivePdf(bytes,"application/pdf");const file=await store.put(bytes);created.push(file);Object.assign(item,{fileKey:file.key,fileHash:inspected.sha256,size:file.size,pages:inspected.pages,inspectedAt:new Date()});}
     catch(e){if(e instanceof PdfRejected)item.error="PDF_REJECTED";else throw e;}
    }
    items.push(item);

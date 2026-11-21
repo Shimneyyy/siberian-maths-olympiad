@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
 import type { diplomaBatchView, ownDiplomas } from "@/lib/diplomas";
 type Review=Awaited<ReturnType<typeof diplomaBatchView>>;
-const errors:Record<string,string>={PARTICIPANT_UNAVAILABLE:"Не найден однозначный подтверждённый логин участника этого года",PDF_REJECTED:"PDF не прошёл проверку структуры/антивирус",DUPLICATE:"Все дубли логина отклонены",INVALID_NAME:"Неверное имя: нужен логин.pdf в корне ZIP",UNSUPPORTED_ENTRY:"Недопустимый объект архива",NOT_PDF:"Нет признака PDF"};
+const errors:Record<string,string>={PARTICIPANT_UNAVAILABLE:"Не найден однозначный подтверждённый логин участника этого года",PDF_REJECTED:"PDF не прошёл проверку структуры или допустимого содержимого",DUPLICATE:"Все дубли логина отклонены",INVALID_NAME:"Неверное имя: нужен логин.pdf в корне ZIP",UNSUPPORTED_ENTRY:"Недопустимый объект архива",NOT_PDF:"Нет признака PDF"};
 async function saveDiploma(id:string){const r=await clientFetch("/api/diplomas/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({documentId:id})});if(!r.ok)throw new Error((await r.json()).error||"Скачивание недоступно");const url=URL.createObjectURL(await r.blob());try{const a=document.createElement("a");a.href=url;a.download=`diploma-${id}.pdf`;a.click();}finally{URL.revokeObjectURL(url);}}
 export function DiplomaManager({editions}:{editions:{id:string;year:number}[]}){
  const hydrated=useHydrated();const [editionId,setEdition]=useState(editions[0]?.id??""),[busy,setBusy]=useState(false),[message,setMessage]=useState("");

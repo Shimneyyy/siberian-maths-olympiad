@@ -9,7 +9,7 @@
 Подготовка app/Compose — [README](../README.md), Windows — [WSL](WINDOWS_WSL.md).
 Процессы app/worker не являются частью snapshot: запускать заново после восстановления.
 GET /api/health: 200 при доступной БД, иначе 503 без подробностей. Проверять свободное
-место, доступность ключей/файлов, ClamAV, возраст/число READY/PROCESSING/FAILED jobs.
+место, доступность ключей/файлов, доступность PDF-worker, возраст/число READY/PROCESSING/FAILED jobs.
 Не печатать .env/keyring/PDF/дампы/SMTP-ответы в логи или чат.
 
 Worker с той же учебной .env: npm run worker; разовый цикл — npm run worker -- --once.
@@ -119,7 +119,7 @@ build/start на loopback; 5000 участников в каждом из дву
 | Провайдеры | Размещение БД/файлов/копий/почты в РФ, договоры и обработчики |
 | Ключи | Настоящий KMS, отдельные права, ротация и восстановление |
 | Сеть/почта | HTTPS/proxy/CDN/cache, безопасный IP, SPF/DKIM/DMARC, реальная доставка |
-| Файлы | Свежесть AV, OS sandbox, ingress/storage quotas, production cleanup и максимальная нагрузка; PostgreSQL preparation leases уже есть |
+| Файлы | OS sandbox, ingress/storage quotas, production cleanup и максимальная нагрузка; PostgreSQL preparation leases уже есть |
 | Наблюдение | Мониторинг/уведомления и независимый журнал обращений после snapshot |
 | Копии | Scheduler, независимые ключи, RPO 24ч/RTO 8ч на целевых объёмах |
 | Внешний nsuhw | Реальный формат/пароли/HTTPS и защищённая ручная передача |
@@ -134,7 +134,7 @@ build/start на loopback; 5000 участников в каждом из дву
 ## Проверка подготовленной среды
 
 DEMO_REGISTRATION=true npm run ops:check проверяет Linux/Node 24, применённые
-миграции, права keyring/файлов, PDF-service, возраст AV и соединение SMTP без письма.
+миграции, права keyring/файлов, PDF-service и соединение SMTP без письма.
 JSON содержит только имена проверок/коды. Код 1 означает блокирующую проблему.
 productionAccepted всегда false: инструмент не подменяет внешнюю приёмку.
 

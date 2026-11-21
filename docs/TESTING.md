@@ -13,11 +13,11 @@ BETTER_AUTH_SECRET, SMTP на Mailpit. Команды начальной под�
 Учебный keyring создать после миграций: DEMO_REGISTRATION=true npm run nsuhw:keys -- init.
 Не заменять ключи существующей БД; тесты не повод для migrate reset.
 
-Для files/communications/restore-drill нужен настоящий ClamAV:
-docker compose --profile files up -d --build --wait clamav pdf-inspector pdf-relay.
-Prlimit находится внутри PDF-контейнера; app не запускает парсер под своим UID.
-Для pinned synthetic баз CI явно задаёт CLAMAV_MAX_DATABASE_AGE_HOURS=720; по
-умолчанию 168 и stale-базы блокируют сканирование. Настройка не доказывает их актуальность.
+Для files, communications и restore-drill запустите изолированный PDF-worker:
+```sh
+docker compose --profile files up -d --build --wait pdf-inspector pdf-relay
+```
+Prlimit находится внутри PDF-контейнера.
 Для Chromium: npx playwright install chromium (в CI --with-deps), либо
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium, если браузер уже установлен.
 
@@ -40,9 +40,9 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 | npm run test:pg | pg-adapter/registrations с --throw-deprecation; PostgreSQL |
 | npm run test:db | Последовательные service/DB/CLI тесты из package.json, включая отказ session/audit, конкурентные auth limits, staff reauth, каталоги, preparation leases, orphan staging, scopes, гонки команд, миграцию самоввода логина, SQL-инварианты, новый CSV, импорт, outbox, lifecycle и parser-примитивы |
 | npm run test:achievements | Chromium: правка логина, новая версия/публикация/отзыв, командный CSV/курсы, повтор после потерянного ответа и защита старой вкладки; временная БД |
-| npm run ops:check | Read-only local synthetic preflight: runtime/миграции/права/worker/AV/SMTP, без отправки письма; не допуск production |
-| npm run test:files | Дипломы/PDF/ZIP/карантин/протокол и реальный ClamAV/EICAR; PostgreSQL, prlimit, сканер |
-| npm run test:ops | Managed backup и настоящий restore-drill; PostgreSQL/Docker, ClamAV, synthetic env |
+| npm run ops:check | Read-only local synthetic preflight: runtime/миграции/права/worker/SMTP, без отправки письма; не допуск production |
+| npm run test:files | Дипломы, ZIP, карантин и изолированная проверка PDF; PostgreSQL и Docker |
+| npm run test:ops | Managed backup и настоящий restore-drill; PostgreSQL, Docker, PDF-worker, synthetic env |
 | npm run test:http | Семь auth/HTTP сценариев через dev :3100, Mailpit; предоставленная тестовая БД |
 | npm run test:registration | Два отдельных запуска registration-http: настоящий отказ keyring и SMTP, UI/rollback/сохранение аккаунта |
 | npm run test:account-switch | Chromium: auth/autofill/меню/пустой admin → создание выпуска в UI с повтором потерянного ответа → сроки → назначение; временная БД |
@@ -59,7 +59,7 @@ loopback-БД smo_test_<UUID>, требуют CREATE DATABASE. Auth HTTP/live и
 ## Порядок полного CI
 
 Workflow делает npm ci → db:generate → db:migrate → db:seed дважды → keyring init →
-lint → typecheck → запуск ClamAV/PDF-worker/relay → test:pg → test:db → test:files → test:ops →
+lint → typecheck → запуск PDF-worker и relay → test:pg → test:db → test:files → test:ops →
 установка Chromium → test:http → test:registration → test:account-switch → test:live →
 test:achievements → test:communications → test:load → build → check:build.
 В CI PG_CONTAINER указывает существующий PostgreSQL service-контейнер для ops.
@@ -72,7 +72,7 @@ test:achievements → test:communications → test:load → build → check:buil
 Load использует готовые auth-сессии, не 200 password-login/браузеров; три волны по
 200 запросов и дополнительную проверку явки/отзыва. Timeout списка остаётся 4с,
 обновление явки проверяется в пределах 10с. Это не SLA/soak целевой инфраструктуры.
-PDF/AV-тесты не доказывают безопасность любого файла, freshness production-баз,
+PDF-тесты покрывают выбранные форматы и сценарии изоляции. Они не гарантируют безопасность произвольного файла,
 обработку максимального ZIP или изоляцию нескольких процессов.
 Native Windows executor/Windows ACL и пользовательский WSL этим pipeline не проверены.
 Реальные nsuhw, ПДн, внешняя почта, production-провайдеры не вызываются.

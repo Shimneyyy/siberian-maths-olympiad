@@ -173,7 +173,7 @@ UI этого сценария полностью проверяет test:commun
 ## Автоматические проверки
 
 Для полного набора используйте GitHub Actions Checks либо отдельную локальную
-синтетическую DATABASE_URL с миграциями/seed/keyring и PostgreSQL/Mailpit/ClamAV.
+синтетическую DATABASE_URL с миграциями/seed/keyring и PostgreSQL, Mailpit и PDF-worker.
 Не запускайте общие test:db/test:http поверх БД с вашими ручными аккаунтами:
 они создают/очищают fixtures и требуют единственного тестового администратора.
 

@@ -33,7 +33,6 @@ jobs:
       SMTP_PORT: '1025'
       DATABASE_URL: postgresql://smo:ci_only_password@127.0.0.1:5432/smo_test?schema=public
       NEXT_TELEMETRY_DISABLED: '1'
-      CLAMAV_MAX_DATABASE_AGE_HOURS: '720'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,7 +48,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:pg
-      - run: docker compose --profile files up -d --build --wait clamav pdf-inspector pdf-relay
+      - run: docker compose --profile files up -d --build --wait pdf-inspector pdf-relay
       - run: npm run test:db
       - run: npm run test:files
       - run: npm run test:ops

@@ -15,7 +15,7 @@
 | База | [schema.prisma](../prisma/schema.prisma), [SQL-миграции](../prisma/migrations): PostgreSQL |
 | Соединения | [db.ts](../src/lib/db.ts), [pg-adapter.ts](../src/lib/pg-adapter.ts) |
 | Фон/CLI | [scripts](../scripts): worker писем, provisioning, ключи, lifecycle, backup/restore |
-| Локальные сервисы | [Compose](../compose.yaml): PostgreSQL 17, Mailpit, ClamAV в профиле files |
+| Локальные сервисы | [Compose](../compose.yaml): PostgreSQL 17, Mailpit, PDF-worker и relay в профиле files |
 
 Основной путь записи: HTTP Origin/сессия/размер → схема входа → прикладные права и
 повторная проверка пароля там, где требуется → транзакция/блокировки/revision →

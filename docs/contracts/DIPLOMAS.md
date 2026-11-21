@@ -33,13 +33,11 @@ expandedBytes=1000×10 МиБ и время 60 секунд. Заголовок 
 
 ## Реальная проверка PDF
 
-[pdf-inspection.ts](../../src/lib/private-files/pdf-inspection.ts),
-[check-passive-pdf.mjs](../../scripts/check-passive-pdf.mjs),
-[clamav.ts](../../src/lib/private-files/clamav.ts).
-Одна частная копия байтов проходит настоящий pdf-lib разбор и ClamAV INSTREAM;
-результат связан с SHA-256. MIME, заголовок и отрицательный AV по отдельности
-не разрешают публикацию. Шифрование PDF/активные объекты/JS/действия/формы/вложения/
-внешние URI отклоняются валидатором; он не обещает безопасность произвольного PDF.
+[Клиент проверки PDF](../../src/lib/private-files/pdf-inspection.ts) отправляет копию
+байтов в [изолированный парсер](../../scripts/check-passive-pdf.mjs) и вычисляет
+SHA-256 этой копии. Парсер отклоняет зашифрованные PDF, активные объекты, JavaScript,
+действия, формы, вложения и внешние URI. Проверка основана на структуре PDF.
+Антивирусное сканирование исключено по [ADR-015](../decisions/ADR-015-remove-antivirus.md).
 
 PDF: 1–100 страниц, глубина 100, 100000 посещений объектов. Проверка выполняется
 через http://127.0.0.1:3320/inspect в отдельном контейнере: UID 10001, root read-only,
@@ -52,15 +50,8 @@ cap_drop=ALL/no-new-privileges, 512 МиБ/1 CPU/64 PID. Ни исходнико
 wall=12с, stdout до 512 символов, stderr не передаётся наружу. Вход — байты в памяти,
 без временных PDF. Клиентский timeout 15с; недоступность/перегрузка/неверный ответ
 означают 503, fallback на неизолированный процесс отсутствует.
-Сборка worker после npm ci: docker compose --profile files up -d --build --wait.
+После npm ci запустите профиль files командой из README.
 Образы/ограничения — [compose](../../compose.yaml), [ADR-013](../decisions/ADR-013-isolated-file-inspection.md).
-
-ClamAV: INSTREAM без имён/путей, chunks 64 КиБ, timeout 30с. До сканирования VERSION
-проверяет возраст именно загруженных баз. CLAMAV_MAX_DATABASE_AGE_HOURS — 1–720,
-по умолчанию 168. Неверный/будущий timestamp, stale, EOF/ошибка/тайм-аут не дают CLEAN.
-Сервис clamav-updater проверяет обновления 12 раз в сутки, shared volume сохраняет
-базы; clamd подхватывает их при SelfCheck. Успех запуска updater не доказывает свежесть.
-В synthetic CI для pinned базы явно установлено 720; это не production-политика.
 
 ## Подготовка, назначение и публикация
 
@@ -111,8 +102,6 @@ Attachment, application/pdf, private/no-store/no-cache/no-referrer/nosniff/sandb
 Все версии хранятся бессрочно по [учебной политике](../DATA_LIFECYCLE.md);
 не смешивать orphan с историческими версиями. Runtime-файлы исключены из Git/traces.
 
-Production закрыт до приёмки актуальных AV-баз, целевого изолированного runtime,
-приватного хранилища/backup/retention и правовых условий. Механизмы изоляции, ранней
-квоты и freshness реализованы; локальный успех не подтверждает целевой хост.
-Текущий pinned ClamAV profile сам по себе не доказывает свежесть баз. Проверки test:files и
-communications с реальными PDF/ClamAV/EICAR — [TESTING](../TESTING.md).
+Перед production требуется принять изоляцию на целевом сервере, приватное хранилище,
+резервное копирование, сроки хранения и правовые условия.
+Проверки ZIP и PDF описаны в [TESTING](../TESTING.md).

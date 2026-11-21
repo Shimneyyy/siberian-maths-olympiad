@@ -9,6 +9,7 @@
 | ID | Статус и критерий |
 | --- | --- |
 | ADMIN-EDITION | Реализовано и проверено: форма/API TECHNICAL_ADMIN, пароль/подтверждение, безопасный повтор, запрет дублей, затем сроки и назначение главного. [ADR-014](decisions/ADR-014-admin-edition-creation.md), [проверки](archive/investigations/ADMIN_EDITION_CREATION.md). Новых миграций нет |
+| REMOVE-AV | Реализовано и проверено. Убраны ClamAV, обновление баз и зависимость загрузки дипломов от сигнатур. Решение пользователя от 21 ноября 2026. [ADR-015](decisions/ADR-015-remove-antivirus.md) |
 
 ## Программная часть
 
@@ -19,7 +20,7 @@
 | SEC02 | Session lookup/denial audit находятся внутри обработки ошибок; фиксированный 503/no-store, без выполнения предметной записи |
 | SEC03 | Staff reauth/атомарный лимит/схема внутри сервисов assign/revoke, повтор авторизации в транзакции |
 | SEC04 | Атомарные адресные/token limits, опциональный доверенный proxy/IP limit, одинаковые ошибки OTP/reset; Nginx template с ограничениями. Реальные пороги/нагрузка/тайминги целевого ingress требуют приёмки оператора |
-| SEC05 | Квота до чтения multipart, byte/deadline limits, изолированный read-only PDF-worker, freshness VERSION перед AV, updater и ручная восстановимая изоляция orphan. ZIP остаётся ограниченной по размеру/времени HTTP-подготовкой, не фоновой очередью |
+| SEC05 | Квота до чтения multipart, byte/deadline limits, изолированный read-only PDF-worker и ручная восстановимая изоляция orphan. ZIP остаётся ограниченной по размеру/времени HTTP-подготовкой, не фоновой очередью |
 | DOC-CATALOG / Q11 | UI/API общих вузов/курсов главным, пароль/revision/аудит, отключение без удаления; [контракт](contracts/CATALOGS.md) |
 | NSUHW-RELINK / Q02 | Исправление собственного старого логина с revision; achievements/prepared не заменяются по принятому [ADR-010](decisions/ADR-010-owner-login-correction.md). Смена prepared/его пароля не входит в принятое решение |
 | RESULTS-CORRECTION / Q08 | Новая неизменяемая версия с причиной, отдельная публикация и отзыв, история/аудит/outbox; [ADR-011](decisions/ADR-011-result-corrections-and-revocation.md) |
@@ -30,7 +31,6 @@
 
 | ID | Что требуется вне доступной среды |
 | --- | --- |
-| AV-LIVE | Доступ updater к database.clamav.net и реально свежая загруженная база. В доступной среде обновление завершилось timeout; pinned synthetic база принимается только с явно заданной тестовой границей 720 часов. Default 168 отказывает на stale |
 | OPS01 / PRODUCTION / Q12–Q13 | Выбранные сервер/оператор/провайдеры/основания хранения/KMS/домен/TLS/SMTP, самостоятельные копии и scheduler, мониторинг, целевой restore/load drill и отдельный допуск. [Условия](OPERATIONS.md); ops:check не заменяет их |
 | WSL-VERIFY | Реальная Windows/WSL-машина пользователя, сохранённые БД/.env/ключи и проверка входа/регистрации на ней. [Инструкция](WINDOWS_WSL.md); cloud Linux этого не доказывает |
 | CUSTOMER-UI | Согласование оформления и требований заказчика на его данных/сценариях. Автоматический keyboard/layout smoke не является утверждением дизайна |

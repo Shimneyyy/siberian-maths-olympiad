@@ -3,8 +3,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createServer } from "node:net";
-import { scannerDatabaseStatus,ScannerUnavailable } from "../src/lib/private-files/scanner-health";
 import { readUploadBody,UploadReadTimeout } from "../src/lib/private-files/upload-body";
 import { BodyTooLarge } from "../src/lib/http-body";
 process.env.DEMO_REGISTRATION="true";
@@ -29,16 +27,4 @@ test("upload reader bounds actual streamed bytes, cancels stalled transfers and 
  await assert.rejects(readUploadBody(request(slow),8,20),UploadReadTimeout);assert.equal(cancelled,true);
  const large=new ReadableStream<Uint8Array>({start(c){c.enqueue(new Uint8Array(9));}});await assert.rejects(readUploadBody(request(large),8,100),BodyTooLarge);
  const good=new ReadableStream<Uint8Array>({start(c){c.enqueue(new Uint8Array(8));c.close();}});assert.equal((await readUploadBody(request(good),8,100)).length,8);
-});
-test("scanner freshness is checked against loaded signatures, rejects future/malformed versions and reports stale data",async()=>{
- for(const [reply,expected] of [["ClamAV 1.5.4/28171/Sun Nov  1 06:27:34 2026\0","stale"],["ClamAV 1.5.4/28171/Sat Nov 21 00:00:00 2026\0","fresh"],["ClamAV 1.5.4/28171/Mon Nov 30 00:00:00 2026\0","reject"],["garbage\0","reject"]]){
-  const server=createServer(socket=>{socket.on("data",()=>socket.end(reply));});await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const address=server.address();assert.ok(address&&typeof address!=="string");
-  try{const read=()=>scannerDatabaseStatus(address.port,1000,168,Date.parse("2026-11-21T06:00:00Z"));if(expected==="reject")await assert.rejects(read(),ScannerUnavailable);else assert.equal((await read()).fresh,expected==="fresh");}finally{await new Promise<void>(r=>server.close(()=>r()));}
- }
-});
-test("stale signatures stop a scan before any PDF bytes are sent to INSTREAM",async()=>{
- const {scanWithClamav}=await import("../src/lib/private-files/clamav");const old=process.env.CLAMAV_MAX_DATABASE_AGE_HOURS;process.env.CLAMAV_MAX_DATABASE_AGE_HOURS="1";
- const commands:string[]=[];const date=new Date(Date.now()-48*3600000).toUTCString().replace(",","").replace(" GMT","");
- const server=createServer(socket=>socket.on("data",bytes=>{commands.push(bytes.toString());socket.end(`ClamAV 1.5.4/28171/${date}\0`);}));await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const address=server.address();assert.ok(address&&typeof address!=="string");
- try{await assert.rejects(scanWithClamav(Buffer.from("synthetic PDF bytes"),address.port,1000),ScannerUnavailable);assert.deepEqual(commands,["zVERSION\0"]);}finally{await new Promise<void>(r=>server.close(()=>r()));if(old===undefined)delete process.env.CLAMAV_MAX_DATABASE_AGE_HOURS;else process.env.CLAMAV_MAX_DATABASE_AGE_HOURS=old;}
 });
