@@ -3,11 +3,68 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "../src/lib/pg-adapter";
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 import { randomUUID } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+// Use real preview/apply services; simulate only denied or lost HTTP responses.
+async function exerciseImportRecovery(page: Page, input: {
+  path: string; fileLabel: string; previewButton: string; caption: string;
+  submitButton: string; confirmation: string; csv: string; password: string;
+  success: string;
+}) {
+  const file = page.getByLabel(input.fileLabel, { exact: true });
+  const table = page.getByRole("table", { name: input.caption, exact: true });
+  const preview = page.getByRole("button", { name: input.previewButton, exact: true });
+  const submit = page.getByRole("button", { name: input.submitButton, exact: true });
+  const password = page.getByLabel("Текущий пароль", { exact: true });
+  const confirmation = page.getByLabel(input.confirmation, { exact: false });
+  const prepare = async () => {
+    await file.setInputFiles({ name: "synthetic-recovery.csv", mimeType: "text/csv", buffer: Buffer.from(input.csv) });
+    await preview.click(); await table.waitFor();
+  };
+  const send = async () => { await password.fill(input.password); await confirmation.check(); await submit.click(); };
+  const previewPath = input.path.replace(/apply$/, "preview");
+  await page.route(previewPath, route => route.fulfill({status:403,contentType:"text/plain",body:"synthetic denial"}));
+  await preview.click(); await table.waitFor({state:"detached"});
+  await page.getByRole("status").filter({hasText:"Выберите файл и проверьте доступ заново"}).waitFor();
+  assert.equal(await file.inputValue(), ""); assert.equal(await preview.isDisabled(), true);
+  await page.unroute(previewPath); await prepare();
+  for (const status of [401, 403, 409]) {
+    await page.route(input.path, route => route.fulfill({ status, contentType: "text/plain", body: "synthetic denial" }));
+    await send();
+    await table.waitFor({ state: "detached" });
+    if (status !== 409) {
+      assert.equal(await file.inputValue(), "", "Denied access clears the selected source");
+      assert.equal(await preview.isDisabled(), true);
+    } else {
+      assert.notEqual(await file.inputValue(), "", "Conflict preserves the source for a new preview");
+      await page.getByRole("status").filter({ hasText: "Выполните новый предпросмотр" }).waitFor();
+    }
+    await page.unroute(input.path);
+    if (status === 409) { await preview.click(); await table.waitFor(); } else await prepare();
+  }
+  const ids: string[] = [], hashes: string[] = [];
+  let committedStatus = 0;
+  await page.route(input.path, async route => {
+    const body = route.request().postDataJSON(); ids.push(body.id); hashes.push(body.selectionHash);
+    if (ids.length === 1) {
+      const response = await route.fetch(); committedStatus = response.status(); await response.dispose();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await send();
+  await page.getByRole("status").filter({ hasText: "Не удалось получить ответ. Повторите импорт этой же формы" }).waitFor();
+  assert.equal(committedStatus, 200, "The import committed before its response was lost");
+  assert.equal(await password.inputValue(), "", "Retry requires the password again");
+  assert.equal(await confirmation.isChecked(), false, "Retry requires explicit confirmation again");
+  await table.waitFor();
+  await send();
+  await page.getByRole("status").filter({ hasText: input.success }).waitFor();
+  await page.unroute(input.path);
+  assert.equal(ids.length, 2); assert.equal(ids[0], ids[1]); assert.equal(hashes[0], hashes[1]);
+}
 test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", { timeout: 180000 }, async () => {
   const base = process.env.TEST_BASE_URL!;
   assert.ok(["localhost","127.0.0.1"].includes(new URL(base).hostname));
@@ -278,10 +335,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal(previewResponse.status(),200); assert.ok(previewResponse.headers()["cache-control"].includes("no-store"));
     const checked = await previewResponse.json();
     assert.ok(!JSON.stringify(checked).includes("secretEnvelope"));
-    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
-    await page.getByLabel("Подтверждаю загрузку только верных строк",{exact:false}).check();
-    await page.getByRole("button",{name:"Загрузить верные строки",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Загружено: 1. Пропущено: 1. Результаты не опубликованы."}).waitFor();
+    await exerciseImportRecovery(page, {path:"**/api/results/import/apply", fileLabel:"Файл CSV (до 512 КиБ)", previewButton:"Предпросмотр результатов", caption:"Предпросмотр CSV", submitButton:"Загрузить верные строки", confirmation:"Подтверждаю загрузку только верных строк", csv:resultCsv, password, success:"Загружено: 1. Пропущено: 1. Результаты не опубликованы."});
     const resultBatch=await db.resultImportBatch.findFirstOrThrow();
     const result=await db.individualResult.findFirstOrThrow({include:{scores:{include:{problem:true}}}});
     assert.equal(result.total,17);assert.deepEqual(result.scores.sort((a,b)=>a.problem.ordinal-b.problem.ordinal).map(s=>s.score),[0,null]);
@@ -432,10 +486,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.ok(!(await importPreview.text()).includes(importedSecret));
     await page.getByRole("status").filter({hasText:"Верных строк: 1. Ошибок: 1."}).waitFor();
     assert.ok(!(await page.content()).includes(importedSecret));
-    await page.getByLabel("Текущий пароль",{exact:true}).fill(password);
-    await page.getByLabel("Подтверждаю источник",{exact:false}).check();
-    await page.getByRole("button",{name:"Импортировать аккаунты",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Импортировано: 1. Пропущено: 1."}).waitFor();
+    await exerciseImportRecovery(page, {path:"**/api/nsuhw/import/apply", fileLabel:"CSV аккаунтов", previewButton:"Проверить аккаунты", caption:"Проверка аккаунтов без паролей", submitButton:"Импортировать аккаунты", confirmation:"Подтверждаю источник", csv:importCsv, password, success:"Импортировано: 1. Пропущено: 1."});
     assert.equal(await page.getByLabel("CSV аккаунтов",{exact:true}).inputValue(),"");
     assert.ok((await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:importedUser.id}})).confirmedAt);
     await processEmail(db,sendMail);
