@@ -13,14 +13,19 @@ async function main() {
       console.error("MAIL_WORKER_DEMO_CONFIGURATION_REQUIRED"); process.exitCode = 1; return;
     }
     do {
-      const counts: Record<string, number> = {};
-      for (let i=0; i<20 && running; i++) {
-        const result = await processEmail(db, sendMail);
-        if (result === "EMPTY") break;
-        counts[result] = (counts[result] ?? 0) + 1;
+      try {
+        const counts: Record<string, number> = {};
+        for (let i = 0; i < 20 && running; i++) {
+          const result = await processEmail(db, sendMail);
+          if (result === "EMPTY") break;
+          counts[result] = (counts[result] ?? 0) + 1;
+        }
+        if (Object.keys(counts).length) console.log(JSON.stringify(counts));
+      } catch (error) {
+        if (process.argv.includes("--once")) throw error;
+        console.error("MAIL_WORKER_CYCLE_FAILED: retrying");
       }
-      if (Object.keys(counts).length) console.log(JSON.stringify(counts));
-      if (process.argv.includes("--once")) break;
+      if (process.argv.includes("--once") || !running) break;
       await setTimeout(2000);
     } while (running);
   } finally { await db.$disconnect(); }

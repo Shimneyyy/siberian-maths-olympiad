@@ -1,4 +1,5 @@
 "use client";
+import { ACCOUNT_PASSWORD_LENGTH } from "@/lib/password-length";
 import { clientFetch } from "@/lib/client-fetch";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -85,7 +86,7 @@ export function AuthForm({ mode: initialMode, universities = [], courses = [], r
         <label className="block">Университет<select required name="universityId" className={field} defaultValue=""><option value="" disabled>Выберите вуз</option>{universities.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
         <label className="block">Курс<select required name="courseId" className={field} defaultValue=""><option value="" disabled>Выберите курс</option>{courses.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label></>}
       {["login", "register", "verify", "forgot"].includes(mode) && <label className="block">Email<input name="email" type="email" required autoComplete="email" autoCapitalize="none" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} className={field} /></label>}
-      {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : 12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} /><span className="text-xs text-slate-600">Для нового пароля — не менее 12 символов.</span></label>}
+      {["login", "register", "reset"].includes(mode) && <label className="block">Пароль<input type="password" name="password" required minLength={mode === "login" ? 1 : ACCOUNT_PASSWORD_LENGTH} maxLength={mode === "login" ? 128 : ACCOUNT_PASSWORD_LENGTH} autoComplete={mode === "login" ? "current-password" : "new-password"} className={field} />{mode !== "login" && <span className="text-xs text-slate-600">{ACCOUNT_PASSWORD_LENGTH} символов</span>}</label>}
       {mode === "verify" && <label className="block">Код из письма<input name="code" type="text" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} className={field} /></label>}
       {mode === "register" && <fieldset className="space-y-3 rounded border p-3"><legend>Аккаунт nsuhw</legend>
         <label className="flex gap-3"><input type="checkbox" checked={hasLegacy} onChange={e=>setHasLegacy(e.target.checked)} />У меня уже есть аккаунт nsuhw</label>

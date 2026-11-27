@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 880">
+  <defs>
+    <linearGradient id="infinity-colors" gradientUnits="userSpaceOnUse" x1="250" y1="790" x2="1430" y2="90">
+      <stop stop-color="#df1268"/>
+      <stop offset=".5" stop-color="#8a159f"/>
+      <stop offset="1" stop-color="#3413da"/>
+    </linearGradient>
+    <linearGradient id="ring-colors" gradientUnits="userSpaceOnUse" x1="553" y1="758" x2="1120" y2="120">
+      <stop stop-color="#5830f1"/>
+      <stop offset="1" stop-color="#1ecde7"/>
+    </linearGradient>
+
+    <path id="infinity" fill-rule="evenodd" d="
+      M840 356 C830 356 824 352 816 344
+      C678 205 547 85 389 85 C198 85 42 245 42 442
+      C42 640 191 798 379 798 C561 798 700 656 816 539
+      C825 530 832 527 840 527 C848 527 855 530 864 539
+      C980 656 1119 798 1301 798 C1489 798 1638 640 1638 442
+      C1638 245 1482 85 1291 85 C1133 85 1002 205 864 344
+      C856 352 850 356 840 356 Z
+      M752 424 C627 298 523 196 391 196 C260 196 157 307 157 442
+      C157 577 259 687 390 687 C523 687 627 585 752 459
+      C763 448 763 435 752 424 Z
+      M928 424 C1053 298 1157 196 1289 196 C1420 196 1523 307 1523 442
+      C1523 577 1421 687 1290 687 C1157 687 1053 585 928 459
+      C917 448 917 435 928 424 Z"/>
+    <clipPath id="ring-overlaps">
+      <path d="M840 441 250 784H0V0H840Z M840 441 1430 98H1680V880H840Z"/>
+    </clipPath>
+  </defs>
+
+  <circle cx="840" cy="441" r="346.5" fill="none" stroke="#fff" stroke-width="149"/>
+  <circle cx="840" cy="441" r="346.5" fill="none" stroke="url(#ring-colors)" stroke-width="105"/>
+  <use href="#infinity" fill="url(#infinity-colors)" stroke="#fff" stroke-width="44" stroke-linejoin="round" paint-order="stroke fill"/>
+  <circle cx="840" cy="441" r="346.5" fill="none" stroke="url(#ring-colors)" stroke-width="105" clip-path="url(#ring-overlaps)"/>
+</svg>

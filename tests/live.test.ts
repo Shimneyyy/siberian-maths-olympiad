@@ -122,6 +122,7 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     page.on("request",watch);await page.waitForTimeout(5500);page.off("request",watch);assert.equal(refreshes,0,"Manual 403 stops polling");
     await page.unroute("**/api/registrations/export");
     await page.getByRole("button",{name:"Показать участников"}).click();await page.locator(selector).waitFor();
+    assert.equal(await page.getByRole("link",{name:"Перенести на площадку",exact:true}).count(),0);
     for(const width of [375,1280]){
       await page.setViewportSize({width,height:900});
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Roster fits viewport ${width}`);
@@ -134,11 +135,16 @@ test("two browser sessions see attendance within ten seconds, reconnect and lose
     const catalogLabel=`Браузерный курс ${tag}`;
     await courseForm.getByLabel("Название",{exact:true}).fill(catalogLabel);await courseForm.getByLabel("Текущий пароль").fill(password);
     await courseForm.getByRole("button",{name:"Сохранить запись"}).click();
-    await catalogPage.getByRole("status").filter({hasText:"Справочник сохранён"}).waitFor();
+    await catalogPage.getByRole("status").filter({hasText:"Запись сохранена"}).waitFor();
     const createdCourse=await db.courseOption.findFirstOrThrow({where:{label:catalogLabel}});
     const editedCatalog=await request(editor,"/api/catalogs",{editionId,kind:"course",id:course.id,revision:0,name:"Новый курс в справочнике",active:false,password});
     assert.equal(editedCatalog.status(),200);assert.equal((await db.courseOption.findUniqueOrThrow({where:{id:course.id}})).active,false);
-    await db.courseOption.delete({where:{id:createdCourse.id}});
+    const createdForm=catalogPage.locator("form").filter({has:catalogPage.locator(`input[name="name"][value="${catalogLabel}"]`)});
+    await createdForm.getByLabel("Текущий пароль").fill(password);
+    catalogPage.once("dialog",dialog=>void dialog.accept());
+    await createdForm.getByRole("button",{name:"Удалить",exact:true}).click();
+    await catalogPage.getByRole("status").filter({hasText:"Запись удалена"}).waitFor();
+    assert.equal(await db.courseOption.count({where:{id:createdCourse.id}}),0);
     assert.equal((await db.participation.findUniqueOrThrow({where:{id:participation.id}})).courseLabel,course.label,"Catalog edit preserves participation snapshot");
     for(const width of [375,1280]){await catalogPage.setViewportSize({width,height:900});assert.ok(await catalogPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Catalog fits viewport ${width}`);}
     await catalogPage.close();

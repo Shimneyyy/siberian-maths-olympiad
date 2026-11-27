@@ -1,0 +1,1 @@
+export const ACCOUNT_PASSWORD_LENGTH = 8;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { AccessDenied } from "./access";
+import { AccessDenied, IncorrectCurrentPassword } from "./access";
 import { AdminRateLimit } from "./admin";
 import { assertDemoRegistration } from "./registration-rules";
 import { OlympiadError } from "./olympiad-rules";
@@ -70,7 +70,7 @@ export async function reauthenticateParticipationChief(db: PrismaClient, actorId
   const account = await db.account.findFirst({ where: { userId: actorId, providerId: "credential" } });
   if (!account?.password || !await verifyPassword({ hash: account.password, password })) {
     await db.auditEvent.create({ data: { actorId, action: "CORRECTION_REAUTH_DENIED", objectType: "User", objectId: actorId, outcome: "DENIED" } });
-    throw new AccessDenied("FORBIDDEN");
+    throw new IncorrectCurrentPassword();
   }
 }
 export async function correctParticipation(db: PrismaClient, actorId: string, raw: unknown, clock: () => Date = () => new Date()) {

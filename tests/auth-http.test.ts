@@ -38,8 +38,8 @@ async function mail(email: string, subject: string) {
 
 test("HTTP registration, email proof, sessions, reset and CSRF boundaries", async () => {
   const email = `auth-${randomUUID()}@example.test`;
-  const password = `Synthetic-test-${randomUUID()}`;
-  const replacement = `Replacement-${randomUUID()}`;
+  const password = randomUUID().slice(0, 8);
+  const replacement = randomUUID().slice(0, 8);
   const university = await db.university.findFirstOrThrow({ where: { active: true } });
   const course = await db.courseOption.findFirstOrThrow({ where: { active: true } });
   const registration = { legacyNsuhwLogin: `legacy-${randomUUID()}`, email, password, name: "Синтетический участник", universityId: university.id, courseId: course.id, demoConsent: true, role: "TECHNICAL_ADMIN" };
@@ -84,6 +84,9 @@ test("HTTP registration, email proof, sessions, reset and CSRF boundaries", asyn
     assert.equal(callback.status, 302, "Reset callback must be exposed");
     const location = callback.headers.get("location"); assert.ok(location);
     const token = new URL(location, origin).searchParams.get("token"); assert.ok(token);
+    for (const newPassword of [replacement.slice(1), `${replacement}x`]) {
+      assert.equal((await request("/api/auth/reset-password", { token, newPassword })).status, 400);
+    }
     assert.equal((await request("/api/auth/reset-password", { token, newPassword: replacement })).status, 200);
     const revoked = await fetch(`${base}/api/me`, { headers: { Cookie: oldSession } });
     assert.equal(revoked.status, 401, "Password reset revokes the old session");
@@ -198,15 +201,15 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: edition.id } });
     assert.equal((await request("/api/auth/sign-in/email", { email: chief.email, password })).status, 200);
     const chiefCookies = new Map(cookies);
-    const settings = { editionId: edition.id, revision: 0, title: edition.title, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, isCurrent: true };
-    assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
+    const settings = { editionId: edition.id, revision: 0, title: edition.title };
+    assert.equal((await request("/api/editions", { ...settings, isCurrent: true }, true, origin, "PATCH")).status, 400);
     cookies.clear();
     assert.equal((await request("/api/auth/sign-in/email", { email: admin.email, password })).status, 200);
     const adminCookies = new Map(cookies);
-    const windowInput = { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), registrationManuallyClosed: true, password };
+    const windowInput = { editionId: edition.id, revision: 0, registrationOpensAt: opening.toISOString(), registrationClosesAt: closing.toISOString(), password };
     assert.equal((await request("/api/admin/schedule", { ...windowInput, password: "wrong" })).status, 403);
     assert.equal((await request("/api/admin/schedule", windowInput, true, "http://untrusted.test")).status, 403);
-    assert.equal((await request("/api/admin/schedule", windowInput)).status, 200);
+    assert.equal((await request("/api/admin/schedule", { ...windowInput, registrationOpensAt: new Date(opening.getTime() - 7200000).toISOString(), registrationClosesAt: new Date(opening.getTime() - 3600000).toISOString() })).status, 200);
     assert.equal((await request("/api/registrations/search", { editionId: edition.id })).status, 403);
     assert.equal((await request("/cabinet/admin")).status, 200);
     cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
@@ -226,9 +229,9 @@ test("HTTP annual participation honors organizer scope, closure, venue ownership
     assert.equal((await closed.json() as { code: string }).code, "REGISTRATION_CLOSED");
     assert.equal((await request("/api/editions", settings, true, origin, "PATCH")).status, 403);
     cookies.clear(); for (const [k, v] of chiefCookies) cookies.set(k, v);
-    assert.equal((await request("/api/editions", { ...settings, revision: 1, registrationManuallyClosed: false }, true, origin, "PATCH")).status, 403);
+    assert.equal((await request("/api/editions", { ...settings, revision: 1, registrationManuallyClosed: false }, true, origin, "PATCH")).status, 400);
     cookies.clear(); for (const [k, v] of adminCookies) cookies.set(k, v);
-    assert.equal((await request("/api/admin/schedule", { ...windowInput, revision: 1, registrationManuallyClosed: false })).status, 200);
+    assert.equal((await request("/api/admin/schedule", { ...windowInput, revision: 1 })).status, 200);
     cookies.clear(); for (const [k, v] of studentCookies) cookies.set(k, v);
     assert.equal((await request("/api/participations", { ...input, userId: b.id })).status, 400);
     const first = await request("/api/participations", input);
@@ -385,7 +388,7 @@ test("externally created staff accounts require email proof and retain roles/gra
   const { promisify } = await import("node:util");
   const { manageChief } = await import("../src/lib/admin");
   const { assignVenueStaff } = await import("../src/lib/staff");
-  const tag = randomUUID(), password = `Synthetic-${tag}`;
+  const tag = randomUUID(), password = randomUUID().slice(0, 8);
   const emails = ["admin", "chief", "venue"].map(x => `${x}-${tag}@example.test`);
   const edition = await db.olympiadEdition.create({ data: { year: 7990, title: "Учебный вход" } });
   const venue = await db.venue.create({ data: { name: "Учебная площадка входа" } });
@@ -442,7 +445,7 @@ test("externally created staff accounts require email proof and retain roles/gra
       assert.equal((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
       assert.notEqual((await request("/api/auth/email-otp/verify-email", { email, otp: code })).status, 200);
       assert.equal((await request("/api/auth/sign-in/email", { email, password })).status, 200);
-      const replacement = `Replacement-${tag}`;
+      const replacement = tag.slice(0, 8);
       const oldCookies = [...cookies].map(([k,v]) => `${k}=${v}`).join("; ");
       await reset(email, replacement);
       assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: oldCookies } })).status, 401);
@@ -484,7 +487,7 @@ test("externally created staff accounts require email proof and retain roles/gra
 
 test("HTTP new signup stores Latin login names independently and enforces both signup branches",async()=>{
  cookies.clear();await db.rateLimit.deleteMany();
- const email=`latin-${randomUUID()}@example.test`,password=`Synthetic-${randomUUID()}`;
+ const email=`latin-${randomUUID()}@example.test`,password=randomUUID().slice(0, 8);
  const uni=await db.university.findFirstOrThrow({where:{active:true}}),course=await db.courseOption.findFirstOrThrow({where:{active:true}});
  const input={name:"Синтетический Иван Петров",email,password,universityId:uni.id,courseId:course.id,demoConsent:true,firstNameLatin:"Ivan",lastNameLatin:"Petrov"};
  try{

@@ -11,6 +11,7 @@ import { registrationSchema, DEMO_CONSENT_TEXT, DEMO_CONSENT_VERSION } from "@/l
 
 import { authProxyIdentity, UntrustedProxy } from "@/lib/proxy-identity";
 import { limitAuthRequest } from "@/lib/atomic-rate-limit";
+import { ACCOUNT_PASSWORD_LENGTH } from "@/lib/password-length";
 import { AdminRateLimit } from "@/lib/admin";
 
 class AuthResponseError extends Error {
@@ -72,6 +73,12 @@ async function dispatch(request: Request) {
       const { raw, value } = await readJsonBody(request);
       const path=new URL(request.url).pathname.replace(/^\/api\/auth\//, "");
       if(routes.has(path) && request.headers.get("origin")===new URL(process.env.BETTER_AUTH_URL||"http://localhost:3000").origin) await limitAuthRequest(db,path,value,authProxyIdentity(request.headers));
+      if (path === "reset-password" && request.headers.get("origin") === new URL(process.env.BETTER_AUTH_URL || "http://localhost:3000").origin &&
+          value && typeof value === "object" && "newPassword" in value &&
+          typeof value.newPassword === "string" && value.newPassword.length !== ACCOUNT_PASSWORD_LENGTH) {
+        return Response.json({ message: `Новый пароль должен содержать ${ACCOUNT_PASSWORD_LENGTH} символов.` },
+          { status: 400, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      }
       request = new Request(request.url, { method: request.method, headers: request.headers, body: raw });
     } catch (error) {
       if(error instanceof UntrustedProxy)return Response.json({error:"Недопустимый источник запроса"},{status:403,headers:{"Cache-Control":"private, no-store"}});

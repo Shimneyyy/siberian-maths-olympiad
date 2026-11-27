@@ -45,7 +45,7 @@ export async function registrationsOptions(db: PrismaClient, actorId: string) {
     const chief = actor.role === "CHIEF_ORGANIZER";
     const editions = await tx.olympiadEdition.findMany({
       where: chief ? { staffGrants: { some: { userId: actorId, revokedAt: null } } } : { venueAssignments: { some: { userId: actorId, revokedAt: null } } },
-      orderBy: [{ isCurrent: "desc" }, { year: "desc" }],
+      orderBy: { year: "desc" },
       select: { id: true, year: true, title: true, venues: {
         // Disabled venues still contain participants. Do not filter by active here.
         where: chief ? {} : { assignments: { some: { userId: actorId, revokedAt: null } } },

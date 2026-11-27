@@ -22,16 +22,13 @@ function ManageEdition({ edition, knownVenues }: { edition: Editions[number]; kn
   }
   const siteData = (form: FormData) => ({ editionId: edition.id, label: form.get("label"), address: form.get("address"), room: form.get("room"), instructions: form.get("instructions") });
   return <section className="space-y-6 rounded-xl border border-border bg-white p-6">
-    <h2 className="text-2xl font-semibold">{edition.title} · {edition.year}{edition.isCurrent && " · Текущая"}</h2>
+    <h2 className="text-2xl font-semibold">{edition.title} · {edition.year}</h2>
     <form method="post" className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
-      await send("/api/editions", "PATCH", { editionId: edition.id, revision: edition.revision, title: form.get("title"), registrationOpensAt: edition.opensAt, registrationClosesAt: edition.closesAt, registrationManuallyClosed: edition.registrationManuallyClosed, isCurrent: edition.isCurrent || form.get("current") === "on" });
+      await send("/api/editions", "PATCH", { editionId: edition.id, revision: edition.revision, title: form.get("title") });
     }}>
       <label className="block">Название<input name="title" required maxLength={200} defaultValue={edition.title} className={field} /></label>
-      <p>Сроки и ручное закрытие меняет только технический администратор.</p>
-      {!edition.isCurrent && <label className="flex gap-3"><input name="current" type="checkbox" />Сделать этот выпуск текущим</label>}
-      <p className="text-sm text-slate-600">Для смены текущего выпуска нужны полномочия на прежний и новый годы.</p>
-      <Button disabled={busy}>Сохранить название и текущий выпуск</Button>
+      <Button disabled={busy}>Сохранить название</Button>
     </form>
     <h3 className="border-t border-border pt-6 text-xl font-semibold">Площадки этого года</h3>
     {!edition.venues.length && <p>Площадки ещё не добавлены.</p>}

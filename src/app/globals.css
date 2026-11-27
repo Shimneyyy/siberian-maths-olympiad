@@ -54,3 +54,26 @@ label { line-height: 1.5; }
 .auth-shell a { color: var(--primary); text-decoration: underline; text-underline-offset: .2em; }
 .auth-shell nav a { padding: .3rem 0; font-weight: 600; }
 .auth-shell a:hover { color: #182e81; }
+
+.result-table th,
+.result-table td {
+  padding: 0.75rem;
+  vertical-align: top;
+}
+
+.result-table th {
+  background: var(--muted);
+  white-space: nowrap;
+}
+
+.result-table tbody tr {
+  border-top: 1px solid var(--border);
+}
+
+.result-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+.result-table td:has(dl) {
+  min-width: 12rem;
+}

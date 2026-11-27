@@ -18,24 +18,23 @@ export function AnnouncementManager({ editions, chief }: { editions: Edition[]; 
   async function action(fn: () => Promise<void>) { setBusy(true); setMessage(""); try { await fn(); } catch (e) { setItems([]); setMessage(e instanceof Error ? e.message : "Ошибка"); } finally { setBusy(false); } }
   const field = "block w-full rounded border p-2";
   return <section className="space-y-6">
-    <p>Опубликованный текст неизменяем; исправление публикуется новым объявлением.</p>
-    <label>Год<select className={field} value={editionId} disabled={busy} onChange={e => { setEdition(e.target.value); setItems([]); setDraft(null); setMessage(""); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
+    <label className="block">Год<select className={field} value={editionId} disabled={busy} onChange={e => { setEdition(e.target.value); setItems([]); setDraft(null); setMessage(""); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
     <Button disabled={!hydrated || busy || !editionId} onClick={() => action(load)}>Показать объявления</Button>
     {chief && <form key={`${editionId}:${draft?.id ?? "new"}`} method="post" className="space-y-4" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); const element = e.currentTarget; action(async () => {
       await api("", { editionId, editionVenueId: form.get("venue") || null, title: form.get("title"), body: form.get("body"), important: form.get("important") === "on", password: form.get("password"), ...(draft ? { id: draft.id, revision: draft.revision } : {}) }); setDraft(null); element.reset(); await load(); setMessage("Черновик сохранён");
     }); }}>
       <h2>{draft ? "Изменить черновик" : "Новое объявление"}</h2>
-      <label>Аудитория<select name="venue" className={field} defaultValue={draft?.editionVenueId ?? ""}><option value="">Все участники года, включая отменивших участие</option>{editions.find(e => e.id === editionId)?.venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-      <label>Заголовок<input className={field} name="title" required maxLength={200} defaultValue={draft?.title} /></label>
-      <label>Текст<textarea className={field} name="body" required maxLength={5000} defaultValue={draft?.body} /></label>
-      <label><input type="checkbox" name="important" defaultChecked={draft?.important} /> Важное — при публикации поставить email-уведомления в очередь</label>
-      <label>Текущий пароль<input className={field} name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>
+      <label className="block">Аудитория<select name="venue" className={field} defaultValue={draft?.editionVenueId ?? ""}><option value="">Все участники года</option>{editions.find(e => e.id === editionId)?.venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+      <label className="block">Заголовок<input className={field} name="title" required maxLength={200} defaultValue={draft?.title} /></label>
+      <label className="block">Текст<textarea className={field} name="body" required maxLength={5000} defaultValue={draft?.body} /></label>
+      <label className="block"><input type="checkbox" name="important" defaultChecked={draft?.important} /> Отправить уведомление по email при публикации</label>
+      <label className="block">Текущий пароль<input className={field} name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>
       <Button disabled={!hydrated || busy || !editionId}>Сохранить черновик</Button>
       {draft && <Button type="button" variant="outline" onClick={() => setDraft(null)}>Новый черновик</Button>}
     </form>}
     {message && <p role="status">{message}</p>}
-    {items.map(item => <article key={item.id} className="space-y-3 rounded border p-4"><h2 className="font-semibold">{item.title}</h2><p>{item.publishedAt ? "Опубликовано" : "Черновик"}{item.important ? " · Важное" : ""}</p><p className="whitespace-pre-wrap">{item.body}</p>
-      {chief && !item.publishedAt && <><Button disabled={busy} onClick={() => setDraft(item)}>Редактировать</Button><form method="post" className="space-y-2" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); action(async () => { await api("/publish", { editionId, id: item.id, revision: item.revision, password: data.get("password"), confirm: data.get("confirm") === "on" }); await load(); setMessage(item.important ? "Опубликовано. Уведомление поставлено в очередь, доставка выполняется worker." : "Опубликовано без email-уведомления."); }); }}><label>Текущий пароль<input className={field} name="password" type="password" required autoComplete="current-password" /></label><label><input type="checkbox" name="confirm" required /> Подтверждаю публикацию неизменяемого текста выбранной аудитории</label><Button disabled={!hydrated || busy}>Опубликовать</Button></form></>}
+    {items.map(item => <article key={item.id} className="space-y-3 rounded border p-4"><h2 className="font-semibold">{item.title}</h2>{chief && <p>{item.publishedAt ? "Опубликовано" : "Черновик"}{item.important ? " · С уведомлением по email" : ""}</p>}<p className="whitespace-pre-wrap">{item.body}</p>
+      {chief && !item.publishedAt && <><Button disabled={busy} onClick={() => setDraft(item)}>Редактировать</Button><form method="post" className="space-y-2" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); action(async () => { await api("/publish", { editionId, id: item.id, revision: item.revision, password: data.get("password"), confirm: data.get("confirm") === "on" }); await load(); setMessage(item.important ? "Объявление опубликовано. Уведомления переданы на отправку." : "Объявление опубликовано."); }); }}><label className="block">Текущий пароль<input className={field} name="password" type="password" required autoComplete="current-password" /></label><label className="block"><input type="checkbox" name="confirm" required /> Подтверждаю публикацию неизменяемого текста выбранной аудитории</label><Button disabled={!hydrated || busy}>Опубликовать</Button></form></>}
     </article>)}
   </section>;
 }

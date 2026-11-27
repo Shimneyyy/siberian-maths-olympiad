@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { APIError } from "better-auth/api";
-import { AccessDenied } from "./access";
+import { AccessDenied, IncorrectCurrentPassword } from "./access";
 import { UploadReadTimeout } from "./private-files/upload-body";
 import { BodyTooLarge, readJsonBody } from "./http-body";
 import { OlympiadError } from "./olympiad-rules";
@@ -39,7 +39,7 @@ export async function executeOlympiadRequest(request: Request, deps: RequestDepe
         try { await deps.denialAudit(session.user.id,scope.data.editionId); }
         catch { return Response.json({error:"Не удалось выполнить действие. Повторите позже."},{status:503,headers}); }
       }
-      return Response.json({ error: "Действие недоступно" }, { status: 403, headers });
+      return Response.json({ error: error instanceof IncorrectCurrentPassword ? "Проверьте текущий пароль личного кабинета." : "Действие недоступно" }, { status: 403, headers });
     }
     if (error instanceof OlympiadError) return Response.json({ error: error.message, code: error.code }, { status: error.code === "NOT_FOUND" ? 404 : 409, headers });
     if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2003", "P2034"].includes(error.code)) return Response.json({ error: "Конфликт данных. Обновите страницу и повторите действие." }, { status: 409, headers });

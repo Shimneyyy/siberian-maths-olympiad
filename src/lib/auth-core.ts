@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { emailOTP } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
+import { ACCOUNT_PASSWORD_LENGTH } from "./password-length";
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { registrationSchema, assertDemoRegistration } from "./registration-rules";
 
@@ -24,7 +25,7 @@ export function createAuth(database: PrismaClient | Prisma.TransactionClient, se
     session: { expiresIn: 60 * 60 * 24, updateAge: 60 * 60, cookieCache: { enabled: false } },
     verification: { storeIdentifier: "hashed" },
     emailAndPassword: {
-      enabled: true, requireEmailVerification: true, minPasswordLength: 12, maxPasswordLength: 128,
+      enabled: true, requireEmailVerification: true, minPasswordLength: ACCOUNT_PASSWORD_LENGTH, maxPasswordLength: 128,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => send({ to: user.email, subject: "Восстановление доступа к ЛК СМО", text: `Для смены пароля откройте ссылку: ${url}\nЕсли вы не запрашивали смену пароля, проигнорируйте письмо.` }),
     },

@@ -29,17 +29,16 @@ export function LegacyNsuhwManager() {
     finally { setBusy(false); }
   }
   return <section className="space-y-4">
-    <p>Старый логин сохраняется сразу, без проверки организатором. Он нужен для сопоставления ваших результатов и дипломов. Введите точное написание, включая регистр.</p>
     <Button disabled={!hydrated || busy} onClick={() => void action(load)}>Показать мой аккаунт nsuhw</Button>
-    {loaded && login && <article className="space-y-3 rounded border p-4"><p>Логин nsuhw: {login.login}</p><p>Старый логин сохранён. Подтверждение организатором не требуется.</p><p>Пароль старого аккаунта не хранится в ЛК. Используйте прежний пароль или восстановление на nsuhw.</p></article>}
+    {loaded && login && <article className="space-y-3 rounded border p-4"><dl><dt className="text-sm text-slate-600">Логин nsuhw</dt><dd className="break-all font-mono text-xl font-semibold text-primary">{login.login}</dd></dl></article>}
     {loaded && login && <form key={`${login.id}:${login.revision}`} method="post" className="space-y-3" onSubmit={event => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
-      void action(async () => { await api({login:form.get("login"),revision:login.revision}, "PATCH"); await load(); setMessage("Логин исправлен. Ранее привязанные достижения сохранены."); });
-    }}><label className="block">Исправить старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} defaultValue={login.login} autoComplete="off" disabled={busy}/></label><p>Исправление влияет на будущую загрузку. Уже привязанные результаты и дипломы остаются у вас.</p><Button disabled={!hydrated || busy}>Исправить логин</Button></form>}
+      void action(async () => { await api({login:form.get("login"),revision:login.revision}, "PATCH"); await load(); setMessage("Логин сохранён."); });
+    }}><label className="block">Исправить старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} defaultValue={login.login} autoComplete="off" disabled={busy}/></label><Button disabled={!hydrated || busy}>Исправить логин</Button></form>}
     {loaded && !login && <><NsuhwLoginNamesEditor onPrepared={() => setHasPrepared(true)} /><NsuhwSecretPanel /></>}
     {loaded && !login && !hasPrepared && <form method="post" className="space-y-3" onSubmit={event => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
-      void action(async () => { await api({ login: form.get("login") }); await load(); setMessage("Старый логин сохранён и готов для загрузки результатов."); });
+      void action(async () => { await api({ login: form.get("login") }); await load(); setMessage("Старый логин сохранён."); });
     }}><label className="block">Старый логин nsuhw<input className="block w-full rounded border p-2" name="login" required maxLength={254} autoComplete="off" /></label><Button disabled={!hydrated || busy}>Сохранить старый логин</Button></form>}
     {message && <p role="status">{message}</p>}
   </section>;

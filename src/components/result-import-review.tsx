@@ -1,4 +1,5 @@
 "use client";
+import { ResultPrize, ResultScores } from "@/components/result-values";
 import { clientFetch } from "@/lib/client-fetch";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,13 +19,12 @@ export function ResultImportReview({ editions }: { editions: { id: string; year:
     } catch (error) { setData(null); setMessage(error instanceof Error ? error.message : "Ошибка"); } finally { setBusy(false); }
   }
   return <section className="space-y-4 border-t pt-6"><h2 className="text-2xl">Проверка сохранённых загрузок</h2>
-    <p>Только главный организатор назначенного года. Откройте загрузку и проверьте её перед отдельной публикацией.</p>
     <label>Год для проверки<select className="block rounded border p-2" disabled={busy} value={editionId} onChange={e => { setEdition(e.target.value); setData(null); setBatch(undefined); setPage(1); setMessage(""); }}>{editions.map(e => <option key={e.id} value={e.id}>{e.year}</option>)}</select></label>
     <Button disabled={!hydrated || busy || !editionId} onClick={() => load(undefined)}>Показать сохранённые загрузки</Button>
     {message && <p role="status">{message}</p>}
     {data && <><p role="status">Найдено: {data.total}. Страница: {page}.</p>
       {data.batches.map(b => <article key={b.id} className="rounded border p-3"><p>{b.kind === "FINAL" ? "Итоговые" : "Предварительные"} · {new Date(b.createdAt).toLocaleString("ru-RU", { timeZone: "Asia/Novosibirsk" })} · {b.publication ? "Опубликовано" : "Не опубликовано"} · загружено {b.importedCount}, пропущено {b.rejectedCount}</p><Button disabled={busy} onClick={() => load(b.id)}>Проверить результаты этой загрузки</Button></article>)}
-      {batchId && <div className="overflow-auto"><table className="w-full text-left"><caption>Сохранённые личные результаты</caption><thead><tr><th>ФИО</th><th>Баллы по задачам</th><th>Сумма</th><th>Приз</th></tr></thead><tbody>{data.results.map(r => <tr key={r.id}><td>{r.fullName}</td><td>{r.scores.map(s => `${s.ordinal}: ${s.score ?? "—"}`).join(" · ")}</td><td>{r.total ?? "—"}</td><td>{r.prize ?? "—"}</td></tr>)}</tbody></table></div>}
+      {batchId && <div className="overflow-auto"><table className="result-table w-full text-left"><caption className="sr-only">Сохранённые личные результаты</caption><thead><tr><th>ФИО</th><th>Баллы по задачам</th><th>Сумма</th><th>Приз</th></tr></thead><tbody>{data.results.map(r => <tr key={r.id}><td>{r.fullName}</td><td><ResultScores scores={r.scores} /></td><td className="font-semibold tabular-nums">{r.total ?? "—"}</td><td><ResultPrize prize={r.prize} /></td></tr>)}</tbody></table></div>}
       {batchId && !data.publication && <form key={batchId} method="post" className="space-y-3" onSubmit={async e => {
         e.preventDefault(); const form = e.currentTarget, values = new FormData(form); setBusy(true); setMessage("");
         try { const response = await clientFetch("/api/results/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editionId, batchId, password: values.get("password"), confirmed: values.get("confirmed") === "on" }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Ошибка публикации"); await load(batchId, page); setMessage("Загрузка опубликована. Уведомления поставлены в очередь."); } catch (error) { setData(null); setMessage(error instanceof Error ? error.message : "Ошибка"); } finally { form.reset(); setBusy(false); }

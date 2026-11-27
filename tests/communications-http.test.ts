@@ -78,7 +78,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
   const errors: string[] = [];
   try {
-    const password = `Synthetic-${randomUUID()}`;
+    const password = randomUUID().slice(0, 8);
     const chief = await db.user.create({ data: { name: "Учебный главный", email: `${randomUUID()}@example.test`, role: "CHIEF_ORGANIZER", emailVerified: true } });
     const reader = await db.user.create({ data: { name: "Учебный читатель", email: `${randomUUID()}@example.test`, emailVerified: true } });
     const edition = await db.olympiadEdition.create({ data: { year: 8090, title: "Учебные объявления" } });
@@ -102,7 +102,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled);
     await page.getByLabel("Заголовок", {exact:true}).fill(input.title);
     await page.getByLabel("Текст", {exact:true}).fill(input.body);
-    await page.getByLabel("Важное", {exact:false}).check();
+    await page.getByLabel("Отправить уведомление по email", {exact:false}).check();
     await page.getByLabel("Текущий пароль", {exact:true}).fill(password);
     await page.getByRole("button",{name:"Сохранить черновик",exact:true}).click();
     await page.getByRole("status").filter({hasText:"Черновик сохранён"}).waitFor();
@@ -113,7 +113,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await article.getByLabel("Текущий пароль",{exact:true}).fill(password);
     await article.getByLabel("Подтверждаю публикацию",{exact:false}).check();
     await article.getByRole("button",{name:"Опубликовать",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Опубликовано"}).waitFor();
+    await page.getByRole("status").filter({hasText:"Объявление опубликовано"}).waitFor();
     const read = await post(recipient,"announcements/search",{editionId:edition.id});
     assert.ok(read.headers()["cache-control"].includes("no-store")); assert.equal((await read.json()).length,1);
     assert.equal((await post(writer,"announcements",{...input,id:draft.id,revision:1})).status(),409);
@@ -122,6 +122,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await viewed.getByRole("button",{name:"Показать объявления",exact:true}).click();
     await viewed.getByRole("heading",{name:input.title,exact:true}).waitFor();
     assert.equal(await viewed.getByText(input.body,{exact:true}).count(),1);
+    assert.equal(await viewed.getByText("Опубликовано",{exact:true}).count(),0);
     assert.equal(await db.outboxJob.count(),1);
     assert.equal(errors.length,0);
     await db.rateLimit.deleteMany();
@@ -130,23 +131,25 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.getByLabel("Текст письма", {exact:true}).fill("Здравствуйте, {{name}}. {{university}} {{team}} {{venue}}");
     await page.getByLabel("Текущий пароль", {exact:true}).fill(password);
     await page.getByLabel("Подтверждаю отправку", {exact:false}).check();
-    await page.getByRole("button",{name:"Поставить письма в очередь",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"В очередь поставлено писем: 1"}).waitFor();
+    await page.getByRole("button",{name:"Отправить письма",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"К отправке принято писем: 1"}).waitFor();
     assert.equal(await db.mailBatch.count(),1);
     await page.getByRole("button",{name:"Подготовить повторную отправку",exact:true}).click();
     assert.equal(await page.getByLabel("Отдельно подтверждаю",{exact:false}).isChecked(),false);
     await page.getByLabel("Текущий пароль", {exact:true}).fill(password);
     await page.locator('input[name="confirm"]').check();
     await page.getByLabel("Отдельно подтверждаю",{exact:false}).check();
-    await page.getByRole("button",{name:"Поставить письма в очередь",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"В очередь поставлено писем: 1"}).waitFor();
+    await page.getByRole("button",{name:"Отправить письма",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"К отправке принято писем: 1"}).waitFor();
     assert.equal(await db.mailBatch.count(),2);
     const { processEmail } = await import("../src/lib/outbox");
     const { sendMail } = await import("../src/lib/mail-transport");
-    for(let i=0;i<3;i++) await processEmail(db,sendMail);
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(process.execPath, ["--import", "tsx", "scripts/mail-worker.ts", "--once"], { stdio: "ignore" });
     assert.equal(await db.outboxJob.count({where:{status:"SENT"}}),3);
     const search = await (await fetch(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${reader.email}`)}`)).json() as { messages: { ID: string; Subject: string }[] };
     const delivered = search.messages.find(m => m.Subject === "Учебное письмо 8090"); assert.ok(delivered);
+    assert.ok(search.messages.some(m => m.Subject === "Важное объявление СМО"));
     const message = await (await fetch(`http://127.0.0.1:8025/api/v1/message/${delivered.ID}`)).json() as { Text: string };
     assert.ok(message.Text.includes(reader.name)); assert.ok(!message.Text.includes("{{")); assert.ok(!message.Text.includes(password));
     await db.rateLimit.deleteMany();
@@ -225,7 +228,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await registrationPage.getByRole("button",{name:"Показать мой аккаунт nsuhw",exact:true}).click();
     await registrationPage.getByRole("button",{name:"Загрузить данные для нового логина",exact:true}).click();
     const reserved=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:created.id}});
-    await registrationPage.getByText(`Логин подготовлен: ${reserved.login}`,{exact:true}).waitFor();
+    await registrationPage.getByText(reserved.login,{exact:true}).waitFor();
     assert.equal(await registrationPage.locator('input[name="lastNameLatin"]').count(),0);
     assert.equal((await post(registering,"nsuhw/login-names",{firstNameLatin:"Ivan",lastNameLatin:"Sidorov",revision:0})).status(),409);
     assert.equal((await db.studentProfile.findUniqueOrThrow({where:{userId:created.id}})).fullName,created.name);
@@ -242,7 +245,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await existingPage.getByRole("status").filter({hasText:"Данные для логина сохранены"}).waitFor();
     const unchangedParticipation=await db.participation.findUniqueOrThrow({where:{id:participation.id}});
     await existingPage.getByRole("button",{name:"Подготовить данные nsuhw",exact:true}).click();
-    await existingPage.getByText("Логин подготовлен: smc.e.existing",{exact:true}).waitFor();
+    await existingPage.getByText("smc.e.existing",{exact:true}).waitFor();
     assert.deepEqual(await db.participation.findUniqueOrThrow({where:{id:participation.id}}),unchangedParticipation);
     const metadataResponse=await existingContext.request.get(`${base}/api/nsuhw/prepared`);
     assert.ok(metadataResponse.headers()["cache-control"].includes("no-store"));assert.ok(!JSON.stringify(await metadataResponse.json()).includes("secretEnvelope"));
@@ -254,7 +257,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal((await post(recipient,"nsuhw/exports/search",{editionId:edition.id})).status(),403);
     await page.goto(`${base}/cabinet/nsuhw-export`);
     await page.getByRole("button",{name:"Обновить предпросмотр выгрузки",exact:true}).click();
-    await page.getByText("К выгрузке: 2.",{exact:false}).waitFor();
+    await page.getByText("Новых аккаунтов к выгрузке: 2",{exact:false}).waitFor();
     await page.getByLabel("Текущий пароль для выгрузки",{exact:true}).fill(password);
     await page.getByLabel("Подтверждаю выгрузку",{exact:false}).check();
     const [download,csvResponse]=await Promise.all([page.waitForEvent("download"),page.waitForResponse(r=>new URL(r.url()).pathname==="/api/nsuhw/exports"&&r.request().method()==="POST"),page.getByRole("button",{name:"Скачать CSV для nsuhw",exact:true}).click()]);
@@ -264,16 +267,16 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     const accountBefore=await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:transferred.id}});assert.equal(accountBefore.confirmedAt,null);
     const {openExternalPassword}=await import("../src/lib/external-secrets/envelope"),{externalSecretContext}=await import("../src/lib/external-secrets/storage"),{loadDemoKeyProtector}=await import("../src/lib/external-secrets/local-keys");
     const externalPassword=await openExternalPassword(accountBefore.secretEnvelope,externalSecretContext(accountBefore),await loadDemoKeyProtector());
-    assert.ok(csv.includes(externalPassword));assert.ok(!csv.includes(password));assert.ok(!JSON.stringify(batch).includes(externalPassword));
+    assert.equal(externalPassword.length, 8);assert.ok(csv.includes(externalPassword));assert.ok(!csv.includes(password));assert.ok(!JSON.stringify(batch).includes(externalPassword));
     await download.delete();
     assert.equal((await post(existingContext,"nsuhw/secret",{password,confirmed:true})).status(),409);
     assert.equal((await post(writer,"nsuhw/exports/confirm",{editionId:edition.id,batchId:batch.id,password,confirmed:true,createdOnNsuhw:false})).status(),400);
-    const exportedBatch=page.getByRole("article").filter({hasText:batch.id});
+    const exportedBatch=page.getByRole("article").filter({hasText:"Ожидается подтверждение успешной загрузки в nsuhw"});
     await exportedBatch.getByLabel("Текущий пароль для подтверждения",{exact:true}).fill(password);
     await exportedBatch.getByLabel("Проверил, что все аккаунты",{exact:false}).check();
     await exportedBatch.getByLabel("Подтверждаю завершение",{exact:false}).check();
     await exportedBatch.getByRole("button",{name:"Подтвердить создание на nsuhw",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Подтверждение сохранено"}).waitFor();
+    await page.getByRole("status").filter({hasText:"Создание аккаунтов подтверждено"}).waitFor();
     assert.ok((await db.preparedExternalAccount.findUniqueOrThrow({where:{userId:transferred.id}})).confirmedAt);
     await processEmail(db,sendMail);await processEmail(db,sendMail);
     assert.equal(await db.outboxJob.count({where:{status:"SENT"}}),6);
@@ -324,7 +327,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     assert.equal(errors.length,0);
     // E07: real CSV file selection, preview and partial import; never publish.
     await db.rateLimit.deleteMany();
-    const resultCsv = `ФИО,Курс,Вуз,Логин,Задача 1,Задача 2,Сумма баллов,Приз\r\n${transferred.name},2,Учебный вуз,${accountBefore.login},0,,17,"Приз, учебный"\r\nНеизвестный участник,2,Учебный вуз,unknown.synthetic,2,3,5,\r\n`;
+    const resultCsv = `ФИО,Курс,Вуз,Логин,Задача 1,Задача 2,Сумма баллов,Приз\r\n${transferred.name},2,Учебный вуз,${accountBefore.login},0,,17,Золото\r\nНеизвестный участник,2,Учебный вуз,unknown.synthetic,2,3,5,\r\n`;
     const resultInput = { editionId: edition.id, kind: "PRELIMINARY", csv: resultCsv };
     assert.equal((await post(recipient,"results/import/preview",resultInput)).status(),403);
     assert.equal((await post(writer,"results/import/preview",resultInput,"https://untrusted.invalid")).status(),403);
@@ -355,8 +358,10 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.getByRole("button",{name:"Показать сохранённые загрузки",exact:true}).click();
     await page.getByRole("button",{name:"Проверить результаты этой загрузки",exact:true}).click();
     const stored = page.getByRole("table").filter({has:page.getByText("Сохранённые личные результаты",{exact:true})});
-    await stored.getByText("Приз, учебный",{exact:true}).waitFor();
-    assert.ok((await stored.textContent())?.includes("1: 0 · 2: —"));
+    await stored.getByText("Золото",{exact:true}).waitFor();
+    assert.ok((await stored.getByText("Золото",{exact:true}).getAttribute("class"))?.includes("bg-amber-100"));
+    assert.equal(await stored.locator("dt").allTextContents().then(values=>values.join(", ")), "Задача 1, Задача 2");
+    assert.deepEqual(await stored.locator("dd").allTextContents(), ["0","—"]);
     await page.route("**/api/results/publish",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({error:"Учебный отказ публикации"})}));
     await page.getByLabel("Пароль для публикации",{exact:true}).fill(password);
     await page.getByLabel("Подтверждаю публикацию всей выбранной загрузки",{exact:true}).check();
@@ -366,7 +371,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.unroute("**/api/results/publish");
     await page.getByRole("button",{name:"Показать сохранённые загрузки",exact:true}).click();
     await page.getByRole("button",{name:"Проверить результаты этой загрузки",exact:true}).click();
-    await stored.getByText("Приз, учебный",{exact:true}).waitFor();
+    await stored.getByText("Золото",{exact:true}).waitFor();
     // E08: publish a reviewed batch, read only one's own, then replace display with final.
     await db.rateLimit.deleteMany();
     assert.equal((await post(existingContext,"auth/sign-in/email",{email:transferred.email,password})).status(),200);
@@ -418,7 +423,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.getByLabel("ZIP дипломов",{exact:true}).setInputFiles({name:"synthetic-diplomas.zip",mimeType:"application/zip",buffer:await diplomaZip(originalPdf)});
     await page.getByLabel("Пароль для проверки ZIP",{exact:true}).fill(password);
     await page.getByLabel("Подтверждаю загрузку ZIP",{exact:false}).check();
-    await page.getByRole("button",{name:"Проверить ZIP и подготовить предпросмотр",exact:true}).click();
+    await page.getByRole("button",{name:"Проверить ZIP",exact:true}).click();
     await page.getByRole("status").filter({hasText:"Предпросмотр готов"}).waitFor();
     await page.getByRole("cell",{name:"Корректный PDF",exact:true}).waitFor();
     assert.equal((await existingContext.request.get(`${base}/api/diplomas/mine`)).status(),200);
@@ -445,7 +450,7 @@ test("D04/D06/C11 and legacy nsuhw browser, HTTP authorization and real SMTP", {
     await page.getByLabel("ZIP дипломов",{exact:true}).setInputFiles({name:"synthetic-replacement.zip",mimeType:"application/zip",buffer:await diplomaZip(replacementPdf)});
     await page.getByLabel("Пароль для проверки ZIP",{exact:true}).fill(password);
     await page.getByLabel("Подтверждаю загрузку ZIP",{exact:false}).check();
-    await page.getByRole("button",{name:"Проверить ZIP и подготовить предпросмотр",exact:true}).click();await page.getByRole("status").filter({hasText:"Предпросмотр готов"}).waitFor();
+    await page.getByRole("button",{name:"Проверить ZIP",exact:true}).click();await page.getByRole("status").filter({hasText:"Предпросмотр готов"}).waitFor();
     await page.getByLabel("Назначение 1",{exact:true}).selectOption(`${diplomaDoc.id}:1`);
     await page.getByLabel("Пароль для назначения",{exact:true}).fill(password);await page.getByLabel("Подтверждаю все корректные назначения",{exact:false}).check();await page.getByRole("button",{name:"Подтвердить назначения",exact:true}).click();await page.getByRole("status").filter({hasText:"Корректные файлы назначены"}).waitFor();
     assert.deepEqual(await(await post(existingContext,"diplomas/download",{documentId:diplomaDoc.id})).body(),originalPdf);

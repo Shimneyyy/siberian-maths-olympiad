@@ -1,0 +1,7 @@
+{
+  "name": "smo-pdf-inspector",
+  "private": true,
+  "dependencies": {
+    "pdf-lib": "1.17.1"
+  }
+}

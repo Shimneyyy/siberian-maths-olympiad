@@ -4,6 +4,10 @@ export class AccessDenied extends Error {
   constructor(public readonly reason: "FORBIDDEN") { super(reason); }
 }
 
+export class IncorrectCurrentPassword extends AccessDenied {
+  constructor() { super("FORBIDDEN"); }
+}
+
 // actorId must originate from a verified server-side session, never a request body.
 export async function authorizeStaff(db: PrismaClient | Prisma.TransactionClient, actorId: string,
   action: StaffAction, editionId: string, editionVenueId?: string) {

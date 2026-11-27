@@ -19,7 +19,7 @@ test(`signup reports ${scenario} failure without blaming fields and preserves tr
     await page.locator('select[name="universityId"]').selectOption({ label: "Демонстрационный университет" });
     await page.locator('select[name="courseId"]').selectOption({ label: "Демонстрационный курс" });
     await page.getByLabel("Email", { exact: true }).fill(email);
-    await page.locator('input[name="password"]').fill(`Synthetic-${randomUUID()}`);
+    await page.locator('input[name="password"]').fill(randomUUID().slice(0, 8));
     await page.getByLabel("Имя латиницей для логина", { exact: true }).fill("Synthetic");
     await page.getByLabel("Фамилия латиницей для логина", { exact: true }).fill("Failure");
     await page.getByRole("checkbox", { name: "Использую только вымышленные данные", exact: false }).check();

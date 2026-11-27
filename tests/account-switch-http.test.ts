@@ -15,7 +15,7 @@ test("same browser switches admin to newly registered/verified student, includin
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), args: ["--no-sandbox"] });
   try {
-    const adminPassword = `Synthetic-admin-${randomUUID()}`, studentPassword = `Synthetic-student-${randomUUID()}`;
+    const adminPassword = `Synthetic-admin-${randomUUID()}`, studentPassword = randomUUID().slice(0, 8);
     const admin = await db.user.create({ data: { name: "Учебный администратор переключения", email: `switch-admin-${randomUUID()}@example.test`, role: "TECHNICAL_ADMIN", emailVerified: true } });
     await db.account.create({ data: { userId: admin.id, accountId: admin.id, providerId: "credential", password: await hashPassword(adminPassword) } });
     const studentEmail = `switch-student-${randomUUID()}@example.test`;

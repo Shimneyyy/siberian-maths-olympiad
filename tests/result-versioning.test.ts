@@ -73,10 +73,19 @@ test("owner login correction preserves personal history, rejects stale/spoofing 
 test("team CSV snapshots members and courses, rejects stale rosters/duplicates, publishes separately and survives team deletion",async()=>{
  const f=await fixture();const team=await createTeam(db,f.people[0].user.id,{...f.scope,coachName:"Учебный тренер"});
  await db.teamMember.create({data:{teamId:team.id,participationId:f.people[1].p.id,editionId:f.edition.id,universityId:f.uni.id}});
- const source={...f.scope,kind:"FINAL",csv:`ID команды,Курсы участников,Задача 1,Задача 2,Сумма баллов,Приз\n${team.id},"1; 2",4,,12,Учебный командный приз`};
+ const teamName=(await db.team.findUniqueOrThrow({where:{id:team.id}})).name;
+ const legacy={...f.scope,kind:"FINAL",csv:`ID команды,Курсы участников,Задача 1,Задача 2,Сумма баллов,Приз
+${team.id},"1; 2",4,,12,Учебный командный приз`};
+ const duplicate=await previewTeamResults(db,f.chief.id,{...legacy,csv:legacy.csv+`
+${team.id.toUpperCase()},"1; 2",4,,12,Дубль`});assert.equal(duplicate.validCount,0);
+ assert.equal((await previewTeamResults(db,f.chief.id,legacy)).validCount,1);
+ const source={...f.scope,kind:"FINAL",csv:`Название команды,Курс,Логины,ФИО,Задача 1,Задача 2,Сумма,Приз
+"${teamName}","2; 1","${f.people[1].login}; ${f.people[0].login}","Участник 2; Участник 1",4,,12,Золото`};
  let preview=await previewTeamResults(db,f.chief.id,source);assert.equal(preview.validCount,1);assert.deepEqual(preview.rows[0].members.map(m=>m.courseLabel).sort(),["1","2"]);
  assert.equal((await teamResultRoster(db,f.chief.id,f.scope)).total,1);
- const duplicate=await previewTeamResults(db,f.chief.id,{...source,csv:source.csv+`\n${team.id.toUpperCase()},"1; 2",4,,12,Дубль`});assert.equal(duplicate.validCount,0);
+ const wrong=await previewTeamResults(db,f.chief.id,{...source,csv:source.csv.replace(f.people[0].login,f.people[2].login)});
+ assert.equal(wrong.rows[0].error,"TEAM_UNAVAILABLE");
+ assert.equal((await previewTeamResults(db,f.chief.id,{...source,csv:source.csv+"\n"+source.csv.split("\n")[1]})).validCount,0);
  const stale=preview.selectionHash;await db.participation.update({where:{id:f.people[0].p.id},data:{courseLabel:"Изменённый курс",revision:{increment:1}}});
  await assert.rejects(applyTeamResults(db,f.chief.id,{...source,...f.proof,id:randomUUID(),selectionHash:stale}));preview=await previewTeamResults(db,f.chief.id,source);
  const command={...source,...f.proof,id:randomUUID(),selectionHash:preview.selectionHash};await applyTeamResults(db,f.chief.id,command);await applyTeamResults(db,f.chief.id,command);

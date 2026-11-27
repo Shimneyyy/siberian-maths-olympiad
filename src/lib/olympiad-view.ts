@@ -6,7 +6,7 @@ export async function studentOlympiadView(db: PrismaClient, actorId: string) {
   const user = await db.user.findUnique({ where: { id: actorId }, include: { profile: true } });
   if (!user?.emailVerified || user.role !== "STUDENT") throw new AccessDenied("FORBIDDEN");
   const [editions, participations, universities, courses] = await Promise.all([
-    db.olympiadEdition.findMany({ orderBy: [{ isCurrent: "desc" }, { year: "desc" }], include: {
+    db.olympiadEdition.findMany({ orderBy: { year: "desc" }, include: {
       venues: { where: { active: true }, select: { id: true, label: true, address: true, venue: { select: { name: true } } } },
     } }),
     db.participation.findMany({ where: { userId: actorId }, orderBy: { edition: { year: "desc" } }, include: {
@@ -20,7 +20,7 @@ export async function studentOlympiadView(db: PrismaClient, actorId: string) {
   return {
     profile: user.profile ? { fullName: user.profile.fullName, universityId: user.profile.universityId, courseId: user.profile.courseId } : null,
     universities, courses,
-    editions: editions.map((e) => ({ id: e.id, year: e.year, title: e.title, isCurrent: e.isCurrent,
+    editions: editions.map((e) => ({ id: e.id, year: e.year, title: e.title,
       state: registrationState(e, now), opensAt: e.registrationOpensAt?.toISOString() ?? null, closesAt: e.registrationClosesAt?.toISOString() ?? null,
       venues: e.venues.map((v) => ({ id: v.id, label: v.label || v.venue.name, address: v.address })) })),
     // An explicit DTO: no consent IDs, user IDs, staff assignments or other participants.
@@ -38,9 +38,7 @@ export async function organizerOlympiadView(db: PrismaClient, actorId: string) {
   const editions = await db.olympiadEdition.findMany({ where: { staffGrants: { some: { userId: actorId, revokedAt: null } } },
     orderBy: { year: "desc" }, include: { venues: { orderBy: { id: "asc" }, include: { venue: { select: { name: true } } } } },
   });
-  return editions.map((e) => ({ id: e.id, title: e.title, year: e.year, revision: e.revision, isCurrent: e.isCurrent,
-    opensAt: e.registrationOpensAt?.toISOString() ?? null, closesAt: e.registrationClosesAt?.toISOString() ?? null,
-    registrationManuallyClosed: e.registrationManuallyClosed,
+  return editions.map((e) => ({ id: e.id, title: e.title, year: e.year, revision: e.revision,
     venues: e.venues.map((v) => ({ id: v.id, venueId: v.venueId, label: v.label || v.venue.name, address: v.address, room: v.room ?? "",
       instructions: v.instructions ?? "", active: v.active, revision: v.revision })),
   }));

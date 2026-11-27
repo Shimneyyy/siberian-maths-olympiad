@@ -8,7 +8,7 @@ import { hashPassword } from "better-auth/crypto";
 import { consumeRateLimit,limitAuthRequest } from "../src/lib/atomic-rate-limit";
 import { AdminRateLimit } from "../src/lib/admin";
 import { withPreparationLease } from "../src/lib/private-files/preparation-lease";
-import { saveCatalog,catalogsView } from "../src/lib/catalogs";
+import { saveCatalog,deleteCatalog,catalogsView } from "../src/lib/catalogs";
 const db=new PrismaClient({adapter:new PrismaPg({connectionString:process.env.DATABASE_URL})});
 process.env.DEMO_REGISTRATION="true";
 after(()=>db.$disconnect());
@@ -38,7 +38,7 @@ test("preparation leases coordinate independent clients, bound global work and r
  finally{release();await pending;await other.$disconnect();}
  await assert.rejects(withPreparationLease(db,actor,async()=>{throw new Error("failure");}));await withPreparationLease(db,actor,async()=>{});
 });
-test("chief manages shared catalogs with password/revision, disables entries without physical deletion and rejects other roles",async()=>{
+test("chief manages shared catalogs with password/revision, disables referenced entries, deletes unused entries and rejects other roles",async()=>{
  const password=`Synthetic-${randomUUID()}`,chief=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный каталог",emailVerified:true,role:"CHIEF_ORGANIZER"}});
  const edition=await db.olympiadEdition.create({data:{year:9250,title:"Учебный каталог"}});
  let university:string|undefined,course:string|undefined;
@@ -51,10 +51,28 @@ test("chief manages shared catalogs with password/revision, disables entries wit
  await saveCatalog(db,chief.id,{...scope,kind:"university",name,abbreviation:"УВ",id:uni.id,revision:uni.revision,active:false});
  assert.equal((await catalogsView(db,chief.id,{editionId:edition.id})).universities.find(x=>x.id===uni.id)?.active,false);
  await assert.rejects(saveCatalog(db,chief.id,{...scope,kind:"university",name,abbreviation:"УВ",id:uni.id,revision:0}));
+ await db.rateLimit.deleteMany({where:{key:`correction-reauth:${chief.id}`}});
+ const remove={editionId:edition.id,password,kind:"course",id:c.id,revision:c.revision};
+ await assert.rejects(deleteCatalog(db,chief.id,{...remove,revision:1}),/уже изменён/);
+ const student=await db.user.create({data:{email:`${randomUUID()}@example.test`,name:"Учебный студент",emailVerified:true}});
+ try {
+  await db.studentProfile.create({data:{userId:student.id,fullName:student.name,universityId:uni.id,courseId:c.id}});
+  await assert.rejects(deleteCatalog(db,chief.id,remove),/уже используется/);
+  await assert.rejects(deleteCatalog(db,student.id,remove));
+ }finally{
+  await db.auditEvent.deleteMany({where:{actorId:student.id}});
+  await db.studentProfile.deleteMany({where:{userId:student.id}});
+  await db.user.delete({where:{id:student.id}});
+ }
+ await deleteCatalog(db,chief.id,remove);
+ await deleteCatalog(db,chief.id,{...remove,kind:"university",id:uni.id,revision:1});
+ assert.equal(await db.courseOption.count({where:{id:c.id}}),0);
+ assert.equal(await db.university.count({where:{id:uni.id}}),0);
+ assert.equal(await db.auditEvent.count({where:{actorId:chief.id,action:"CATALOG_DELETED"}}),2);
  await db.user.update({where:{id:chief.id},data:{role:"VENUE_ORGANIZER"}});await assert.rejects(catalogsView(db,chief.id,{editionId:edition.id}));
  }finally{
  await db.auditEvent.deleteMany({where:{actorId:chief.id}});await db.rateLimit.deleteMany({where:{key:`correction-reauth:${chief.id}`}});await db.editionStaffGrant.deleteMany({where:{userId:chief.id}});await db.user.delete({where:{id:chief.id}});await db.olympiadEdition.delete({where:{id:edition.id}});
- if(university)await db.university.delete({where:{id:university}});if(course)await db.courseOption.delete({where:{id:course}});
+ if(university)await db.university.deleteMany({where:{id:university}});if(course)await db.courseOption.deleteMany({where:{id:course}});
  }
 });
 

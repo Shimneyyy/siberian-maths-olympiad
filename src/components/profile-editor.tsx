@@ -20,13 +20,11 @@ export function ProfileEditor({ view, enabled }: { view: View; enabled: boolean 
         ...(annual ? { editionId: view.editionId, participationId: view.participationId } : {}) };
       const response = await clientFetch(annual ? "/api/participations/correction" : "/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
-      setMessage(response.ok ? "Изменения сохранены. Заявки других лет не менялись." : result.error || "Не удалось сохранить");
+      setMessage(response.ok ? "Изменения сохранены." : result.error || "Не удалось сохранить");
       if (response.ok) router.refresh();
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }
   }}>
-    <p>{annual ? "Изменения сохраняются в этой заявке и профиле." : "Это текущий профиль для будущих заявок. Уже поданные заявки содержат отдельные снимки и не изменятся."}</p>
-    <p>Email, роль и площадка здесь не меняются.</p>
     <label className="block">ФИО<input className={field} name="fullName" defaultValue={view.fullName} required minLength={3} maxLength={200} /></label>
     <label className="block">Вуз<select className={field} name="universityId" defaultValue={view.universityId}>{view.universities.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
     <label className="block">Курс<select className={field} name="courseId" defaultValue={view.courseId}>{view.courses.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>

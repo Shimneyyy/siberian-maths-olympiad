@@ -14,12 +14,12 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
     try {
       const response = await clientFetch("/api/teams/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       const result = await response.json();
-      setMessage(response.ok ? (data.operation === "invite" ? "Запрос обработан. Приглашение доступно участнику того же вуза и года, в том числе капитану другой команды. Письмо не отправляется." : "Изменения сохранены.") : result.error || "Действие недоступно");
+      setMessage(response.ok ? (data.operation === "invite" ? "Запрос на приглашение обработан." : "Изменения сохранены.") : result.error || "Действие недоступно");
       if (response.ok) router.refresh();
     } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); }
     finally { setBusy(false); }
   }
-  return <div className="space-y-6"><p>До трёх команд от вуза, до пяти участников включая капитана. Тренер — ФИО; капитан может указать себя.</p>
+  return <div className="space-y-6"><p>До трёх команд от вуза. В команде до пяти участников.</p>
     <Button variant="outline" disabled={busy || !hydrated} onClick={() => router.refresh()}>Обновить команды и приглашения</Button>
     {!editions.length && <p>Сначала зарегистрируйте участие на год олимпиады.</p>}
     {editions.map(e => <section key={e.editionId} className="space-y-3 rounded border border-border p-5"><h2>{e.title} · {e.year}</h2>
@@ -32,7 +32,7 @@ export function TeamManager({ editions, enabled }: { editions: Awaited<ReturnTyp
           if (response.ok) router.refresh();
         } catch { setMessage("Не удалось получить ответ. Обновите страницу перед повтором."); } finally { setBusy(false); }
       }}><label>ФИО тренера<input className="mt-2 block w-full rounded border p-2" name="coachName" required minLength={3} maxLength={200} /></label><Button disabled={busy || !enabled || !hydrated}>Создать команду</Button></form>}
-      {e.invitations.length > 0 && e.team && <p>Чтобы принять приглашение, сначала выйдите из своей команды. Капитан может передать капитанство или удалить свою команду, сохранив участие в олимпиаде.</p>}
+      {e.invitations.length > 0 && e.team && <p>Чтобы принять приглашение, сначала выйдите из своей команды.</p>}
       {e.invitations.map(i => <div className="space-y-2 rounded border p-3" key={i.id}><p>Приглашение в {i.teamName}, капитан {i.captainName}</p><Button disabled={busy || !enabled || !hydrated || !e.canChange || !!e.team} onClick={() => void act({ editionId: e.editionId, operation: "acceptInvitation", invitationId: i.id, revision: i.revision })}>Принять приглашение</Button> <Button variant="outline" disabled={busy || !enabled || !hydrated || !e.canChange} onClick={() => void act({ editionId: e.editionId, operation: "declineInvitation", invitationId: i.id, revision: i.revision })}>Отклонить</Button></div>)}
       {e.team && e.canChange && <div className="space-y-4 border-t pt-4">
         {e.team.captainParticipationId === e.participationId ? <>

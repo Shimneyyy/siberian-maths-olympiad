@@ -15,7 +15,7 @@ BETTER_AUTH_SECRET, SMTP на Mailpit. Команды начальной под�
 
 Для files, communications и restore-drill запустите изолированный PDF-worker:
 ```sh
-docker compose --profile files up -d --build --wait pdf-inspector pdf-relay
+docker compose up -d --build --wait pdf-inspector pdf-relay
 ```
 Prlimit находится внутри PDF-контейнера.
 Для Chromium: npx playwright install chromium (в CI --with-deps), либо

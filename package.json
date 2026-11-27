@@ -6,7 +6,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "worker": "tsx scripts/mail-worker.ts",
     "build": "next build",
     "check:build": "node scripts/check-build-traces.mjs",

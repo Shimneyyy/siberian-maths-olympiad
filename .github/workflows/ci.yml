@@ -48,7 +48,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:pg
-      - run: docker compose --profile files up -d --build --wait pdf-inspector pdf-relay
+      - run: docker compose up -d --build --wait pdf-inspector pdf-relay
       - run: npm run test:db
       - run: npm run test:files
       - run: npm run test:ops

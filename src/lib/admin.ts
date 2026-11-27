@@ -54,7 +54,7 @@ export async function createAdminEdition(db: PrismaClient, actorId: string, raw:
 const scheduleSchema = z.object({ editionId: z.uuid(), revision: z.int().nonnegative(),
   registrationOpensAt: z.iso.datetime({ offset: true }).transform(x => new Date(x)),
   registrationClosesAt: z.iso.datetime({ offset: true }).transform(x => new Date(x)),
-  registrationManuallyClosed: z.boolean(), ...credentials,
+  ...credentials,
 }).strict().refine(x => x.registrationOpensAt < x.registrationClosesAt);
 export async function saveRegistrationWindow(db: PrismaClient, actorId: string, raw: unknown) {
   const input = scheduleSchema.parse(raw);
@@ -66,7 +66,7 @@ export async function saveRegistrationWindow(db: PrismaClient, actorId: string, 
     if (old.revision !== input.revision) throw new OlympiadError("CONFLICT", "Настройки уже изменены. Обновите страницу.");
     const result = await tx.olympiadEdition.update({ where: { id: old.id }, data: {
       registrationOpensAt: input.registrationOpensAt, registrationClosesAt: input.registrationClosesAt,
-      registrationManuallyClosed: input.registrationManuallyClosed, revision: { increment: 1 },
+      registrationManuallyClosed: false, revision: { increment: 1 },
     } });
     const metadata = (e: typeof old) => ({ opensAt: e.registrationOpensAt?.toISOString() ?? null,
       closesAt: e.registrationClosesAt?.toISOString() ?? null, manuallyClosed: e.registrationManuallyClosed, revision: e.revision });
@@ -84,7 +84,8 @@ async function manageChiefOperation(db: PrismaClient, actorId: string, raw: unkn
     await authorizeAdmin(tx, actorId);
     // One global lock for all chief-account/grant operations, including different years.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(4726, 3)`;
-    await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId } });
+    const editions = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "OlympiadEdition" WHERE "id" = ${input.editionId}::uuid FOR UPDATE`;
+    if (!editions.length) throw new OlympiadError("NOT_FOUND", "Выпуск не найден");
     let user = await tx.user.findUnique({ where: { email: input.email } });
     if (user && user.role !== "CHIEF_ORGANIZER") throw new AccessDenied("FORBIDDEN");
     if (input.operation === "revoke") {
@@ -92,14 +93,21 @@ async function manageChiefOperation(db: PrismaClient, actorId: string, raw: unkn
       await tx.editionStaffGrant.updateMany({ where: { userId: user.id, editionId: input.editionId, revokedAt: null }, data: { revokedAt: new Date() } });
       await tx.session.deleteMany({ where: { userId: user.id } });
     } else {
+      const previous = await tx.editionStaffGrant.findFirst({
+        where: { editionId: input.editionId, revokedAt: null, ...(user ? { userId: { not: user.id } } : {}) },
+        select: { userId: true },
+      });
+      if (previous && input.operation === "assign") {
+        throw new OlympiadError("CONFLICT", "У этого выпуска уже есть главный организатор. Выберите «Заменить организатора».");
+      }
       user ??= await tx.user.create({ data: { email: input.email, name: input.name, role: "CHIEF_ORGANIZER" } });
-      if (input.operation === "replace") {
-        const previous = await tx.editionStaffGrant.findMany({ where: { editionId: input.editionId, revokedAt: null, userId: { not: user.id } } });
-        for (const grant of previous) {
-          await tx.editionStaffGrant.update({ where: { userId_editionId: { userId: grant.userId, editionId: grant.editionId } }, data: { revokedAt: new Date() } });
-          await tx.session.deleteMany({ where: { userId: grant.userId } });
-          await tx.auditEvent.create({ data: { actorId, action: "CHIEF_REVOKED", objectType: "User", objectId: grant.userId, editionId: input.editionId, outcome: "SUCCESS" } });
-        }
+      if (previous) {
+        await tx.editionStaffGrant.update({
+          where: { userId_editionId: { userId: previous.userId, editionId: input.editionId } }, data: { revokedAt: new Date() },
+        });
+        await tx.session.deleteMany({ where: { userId: previous.userId } });
+        await tx.auditEvent.create({ data: { actorId, action: "CHIEF_REVOKED", objectType: "User", objectId: previous.userId,
+          editionId: input.editionId, outcome: "SUCCESS" } });
       }
       await tx.editionStaffGrant.upsert({ where: { userId_editionId: { userId: user.id, editionId: input.editionId } },
         create: { userId: user.id, editionId: input.editionId }, update: { revokedAt: null } });

@@ -4,10 +4,6 @@ import { AccessDenied, authorizeStaff } from "./access";
 import { createVenueSchema, editionSettingsSchema, updateVenueSchema, participationSchema, registrationState, OlympiadError } from "./olympiad-rules";
 
 type Tx = Prisma.TransactionClient;
-function scheduleMetadata(value: { registrationOpensAt: Date | null; registrationClosesAt: Date | null; registrationManuallyClosed: boolean; isCurrent: boolean; revision: number }) {
-  return { opensAt: value.registrationOpensAt?.toISOString() ?? null, closesAt: value.registrationClosesAt?.toISOString() ?? null,
-    manuallyClosed: value.registrationManuallyClosed, isCurrent: value.isCurrent, revision: value.revision };
-}
 async function lockEdition(tx: Tx, id: string) {
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "OlympiadEdition" WHERE "id" = ${id}::uuid FOR UPDATE`;
   if (!rows.length) throw new OlympiadError("NOT_FOUND", "Выпуск не найден");
@@ -15,28 +11,13 @@ async function lockEdition(tx: Tx, id: string) {
 export async function saveEdition(db: PrismaClient, actorId: string, raw: unknown) {
   const input = editionSettingsSchema.parse(raw);
   return db.$transaction(async (tx) => {
-    // Same order for every settings change; protects both switching and edition revisions.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(4726, 1)`;
     await lockEdition(tx, input.editionId);
     await authorizeStaff(tx, actorId, "edition:manage", input.editionId);
     const old = await tx.olympiadEdition.findUniqueOrThrow({ where: { id: input.editionId } });
-    // Legacy settings endpoint must never change the registration window, even directly.
-    if ((old.registrationOpensAt?.getTime() ?? null) !== (input.registrationOpensAt?.getTime() ?? null) ||
-        (old.registrationClosesAt?.getTime() ?? null) !== (input.registrationClosesAt?.getTime() ?? null) ||
-        old.registrationManuallyClosed !== input.registrationManuallyClosed) throw new AccessDenied("FORBIDDEN");
     if (old.revision !== input.revision) throw new OlympiadError("CONFLICT", "Настройки уже изменены. Обновите страницу.");
-    if (old.isCurrent && !input.isCurrent) throw new OlympiadError("CONFLICT", "Чтобы сменить текущий выпуск, назначьте текущим другой год.");
-    if (input.isCurrent) {
-      const previous = await tx.olympiadEdition.findFirst({ where: { isCurrent: true, id: { not: input.editionId } } });
-      if (previous) {
-        await authorizeStaff(tx, actorId, "edition:manage", previous.id);
-        await tx.olympiadEdition.update({ where: { id: previous.id }, data: { isCurrent: false, revision: { increment: 1 } } });
-        await tx.auditEvent.create({ data: { actorId, action: "EDITION_CURRENT_UNSET", objectType: "OlympiadEdition", objectId: previous.id, editionId: previous.id, outcome: "SUCCESS" } });
-      }
-    }
-    const { editionId, ...data } = input;
-    const result = await tx.olympiadEdition.update({ where: { id: editionId }, data: { ...data, revision: { increment: 1 } } });
-    await tx.auditEvent.create({ data: { actorId, action: "EDITION_SETTINGS_UPDATED", objectType: "OlympiadEdition", objectId: editionId, editionId, outcome: "SUCCESS", details: { before: scheduleMetadata(old), after: scheduleMetadata(result) } } });
+    const result = await tx.olympiadEdition.update({ where: { id: input.editionId }, data: { title: input.title, revision: { increment: 1 } } });
+    await tx.auditEvent.create({ data: { actorId, action: "EDITION_SETTINGS_UPDATED", objectType: "OlympiadEdition",
+      objectId: result.id, editionId: result.id, outcome: "SUCCESS", details: { previousRevision: old.revision, revision: result.revision } } });
     return result;
   }, { timeout: 10000 });
 }

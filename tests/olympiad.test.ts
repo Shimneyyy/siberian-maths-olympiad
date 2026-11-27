@@ -67,7 +67,7 @@ async function clean(f: Fixture) {
     await tx.university.delete({ where: { id: f.university.id } });
   });
 }
-const settings = (f: Fixture, revision = 0) => ({ editionId: f.first.id, revision, title: f.first.title, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), registrationManuallyClosed: false, isCurrent: false });
+const settings = (f: Fixture, revision = 0) => ({ editionId: f.first.id, revision, title: f.first.title });
 const registration = (f: Fixture) => ({ editionId: f.first.id, format: "ONSITE" as const, editionVenueId: f.site.id, fullName: f.a.name, universityId: f.university.id, courseId: f.course.id });
 const siteSettings = (f: Fixture, active: boolean, revision = 0) => ({ editionId: f.first.id, editionVenueId: f.site.id, revision, label: "Изменённая тестовая площадка", address: "Изменённый синтетический адрес", room: "Тест", instructions: "Тестовые правила", active });
 
@@ -81,22 +81,20 @@ test("registration window includes opening and excludes closing; manual closure 
   assert.equal(registrationState({ ...e, registrationOpensAt: null, registrationClosesAt: null }, opens), "UNCONFIGURED");
 });
 
-test("edition changes require scope, detect stale forms and preserve a single current year", async () => {
+test("edition title changes require scope, detect stale forms and preserve the admin schedule", async () => {
   const f = await fixture(6400);
   try {
     await assert.rejects(saveEdition(db, f.staff.id, settings(f)), AccessDenied);
     await assert.rejects(saveEdition(db, f.chief.id, { ...settings(f), editionId: f.next.id }), AccessDenied);
-    await saveEdition(db, f.chief.id, { ...settings(f), isCurrent: true });
+    await assert.rejects(saveEdition(db, f.chief.id, { ...settings(f), isCurrent: true }));
+    await saveEdition(db, f.chief.id, { ...settings(f), title: "Новое название" });
     const audit = await db.auditEvent.findFirstOrThrow({ where: { editionId: f.first.id, action: "EDITION_SETTINGS_UPDATED" } });
-    assert.ok(JSON.stringify(audit.details).includes(opens.toISOString()));
+    assert.deepEqual(audit.details, { previousRevision: 0, revision: 1 });
     assert.ok(!JSON.stringify(audit).includes(f.chief.email));
     await assert.rejects(saveEdition(db, f.chief.id, settings(f)), hasCode("CONFLICT"));
-    await assert.rejects(saveEdition(db, f.chief.id, settings(f, 1)), hasCode("CONFLICT"));
-    await db.editionStaffGrant.create({ data: { userId: f.chief.id, editionId: f.next.id } });
-    await saveEdition(db, f.chief.id, { ...settings(f), editionId: f.next.id, isCurrent: true });
-    assert.equal((await db.olympiadEdition.findUniqueOrThrow({ where: { id: f.first.id } })).isCurrent, false);
-    assert.equal((await db.olympiadEdition.findUniqueOrThrow({ where: { id: f.next.id } })).isCurrent, true);
-    await assert.rejects(db.olympiadEdition.update({ where: { id: f.first.id }, data: { isCurrent: true } }));
+    const updated = await db.olympiadEdition.findUniqueOrThrow({ where: { id: f.first.id } });
+    assert.equal(updated.title, "Новое название");
+    assert.equal(updated.registrationOpensAt?.toISOString(), opens.toISOString());
     await assert.rejects(db.olympiadEdition.update({ where: { id: f.first.id }, data: { registrationOpensAt: closes } }));
   } finally { await clean(f); }
 });
@@ -163,9 +161,9 @@ test("service checks actual server acceptance time and manual closure inside the
     await assert.rejects(registerParticipation(db, f.a.id, registration(f), () => new Date(opens.getTime() - 1)), hasCode("REGISTRATION_CLOSED"));
     await registerParticipation(db, f.a.id, registration(f), () => opens);
     await assert.rejects(registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => closes), hasCode("REGISTRATION_CLOSED"));
-    await saveRegistrationWindow(db, f.admin.id, { editionId: f.first.id, revision: 0, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), registrationManuallyClosed: true, password: "Synthetic-admin-password" });
+    await db.olympiadEdition.update({ where: { id: f.first.id }, data: { registrationManuallyClosed: true } });
     await assert.rejects(registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => opens), hasCode("REGISTRATION_CLOSED"));
-    await saveRegistrationWindow(db, f.admin.id, { editionId: f.first.id, revision: 1, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), registrationManuallyClosed: false, password: "Synthetic-admin-password" });
+    await saveRegistrationWindow(db, f.admin.id, { editionId: f.first.id, revision: 0, registrationOpensAt: opens.toISOString(), registrationClosesAt: closes.toISOString(), password: "Synthetic-admin-password" });
     await registerParticipation(db, f.b.id, { ...registration(f), fullName: f.b.name }, () => opens);
   } finally { await clean(f); }
 });

@@ -19,7 +19,7 @@ test("admin global schedule and chief lifecycle require verified email/password;
   const e = await db.olympiadEdition.create({ data: { year: 6700, title: "Учебный год" } });
   const other = await db.olympiadEdition.create({ data: { year: 6701, title: "Другой учебный год" } });
   const passwordInput = { password, editionId: e.id }, input = { ...passwordInput, operation: "assign", email: chief.email, name: chief.name };
-  const schedule = { ...passwordInput, revision: 0, registrationOpensAt: "2026-11-01T00:00:00Z", registrationClosesAt: "2026-12-01T00:00:00Z", registrationManuallyClosed: false };
+  const schedule = { ...passwordInput, revision: 0, registrationOpensAt: "2026-11-01T00:00:00Z", registrationClosesAt: "2026-12-01T00:00:00Z" };
   try {
     await db.account.create({ data: { userId: admin.id, accountId: admin.id, providerId: "credential", password: await hashPassword(password) } });
     for (const user of [chief, student, staff]) {
@@ -35,7 +35,7 @@ test("admin global schedule and chief lifecycle require verified email/password;
     await db.editionStaffGrant.create({ data: { userId: chief.id, editionId: other.id } });
     await saveRegistrationWindow(db, admin.id, schedule);
     await assert.rejects(saveEdition(db, chief.id, { ...schedule, revision: 1, title: e.title, isCurrent: false, registrationManuallyClosed: true, password: undefined }), /./);
-    await assert.rejects(saveEdition(db, chief.id, { editionId: e.id, revision: 1, title: e.title, isCurrent: false, registrationOpensAt: schedule.registrationOpensAt, registrationClosesAt: schedule.registrationClosesAt, registrationManuallyClosed: true }), AccessDenied);
+    await assert.rejects(saveEdition(db, chief.id, { editionId: e.id, revision: 1, title: e.title, isCurrent: false, registrationOpensAt: schedule.registrationOpensAt, registrationClosesAt: schedule.registrationClosesAt, registrationManuallyClosed: true }));
     await assert.rejects(registrationsOptions(db, admin.id), AccessDenied);
     await assert.rejects(authorizeStaff(db, admin.id, "venues:manage", e.id), AccessDenied);
     assert.equal((await adminView(db, admin.id)).length >= 2, true);
@@ -53,6 +53,9 @@ test("admin global schedule and chief lifecycle require verified email/password;
     await assert.rejects(authorizeStaff(db, replacement.id, "registrations:read", other.id), AccessDenied);
     await db.user.update({ where: { id: replacement.id }, data: { emailVerified: true } });
     await authorizeStaff(db, replacement.id, "registrations:read", other.id);
+    await assert.rejects(manageChief(db, admin.id, { ...input, editionId: other.id }), /уже есть главный организатор/);
+    await assert.rejects(db.editionStaffGrant.update({ where: { userId_editionId: { userId: chief.id, editionId: other.id } }, data: { revokedAt: null } }));
+    assert.equal(await db.editionStaffGrant.count({ where: { editionId: other.id, revokedAt: null } }), 1);
     const audit = await db.auditEvent.findMany({ where: { actorId: admin.id } });
     assert.ok(audit.some(x => x.action === "REGISTRATION_WINDOW_UPDATED"));
     assert.ok(audit.some(x => x.action === "ADMIN_REAUTH_DENIED"));

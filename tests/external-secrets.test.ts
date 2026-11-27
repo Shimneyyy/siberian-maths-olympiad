@@ -112,7 +112,7 @@ test("E04 concurrent allocations skip known legacy names and produce independent
  const records=await Promise.all(owners.map(owner=>db.$transaction(tx=>prepareNsuhwInTransaction(tx,owner.id,provider()))));
  assert.deepEqual(new Set(records.map(r=>r.login)),new Set([2,3,4,5,6].map(i=>`smc.i.petrov${i}`)));
  const passwords=[];
- for(const record of records){const row=await db.preparedExternalAccount.findUniqueOrThrow({where:{id:record.id}});const value=await openExternalPassword(row.secretEnvelope,externalSecretContext(row),provider());assert.match(value,/^[A-Za-z0-9]{24}$/);assert.ok(/[a-z]/.test(value)&&/[A-Z]/.test(value)&&/[0-9]/.test(value));passwords.push(value);assert.ok(!JSON.stringify(record).includes(value));}
+ for(const record of records){const row=await db.preparedExternalAccount.findUniqueOrThrow({where:{id:record.id}});const value=await openExternalPassword(row.secretEnvelope,externalSecretContext(row),provider());assert.ok(/^[A-Za-z0-9]{8}$/.test(value), "Expected eight alphanumeric characters");assert.ok(/[a-z]/.test(value)&&/[A-Z]/.test(value)&&/[0-9]/.test(value));passwords.push(value);assert.ok(!JSON.stringify(record).includes(value));}
  assert.equal(new Set(passwords).size,5);
 });
 test("E04 same-owner retries preserve login/password and stale names or legacy declarations cannot create a replacement",async()=>{

@@ -21,7 +21,7 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
   pdf-inspector:
-    profiles: [files]
+    image: smo-dev-pdf-inspector
     build:
       context: .
       dockerfile: infra/pdf-inspector/Dockerfile
@@ -39,8 +39,12 @@ services:
       timeout: 3s
       retries: 20
   pdf-relay:
-    profiles: [files]
     image: smo-dev-pdf-inspector
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3320/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     pull_policy: never
     command: [node, --jitless, --max-old-space-size=32, relay.mjs]
     depends_on:
